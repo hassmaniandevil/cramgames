@@ -471,6 +471,15 @@ export function HomeClient() {
             {/* Divider */}
             <div className="border-t border-white/5 my-4" />
 
+            {/* Year & Subject Settings */}
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">Settings</p>
+              <QuickSettings className="w-full" />
+            </div>
+
+            {/* Divider */}
+            <div className="border-t border-white/5 my-4" />
+
             {/* Quick Links */}
             <nav className="space-y-1">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-3">Quick Links</p>
