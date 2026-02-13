@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -15,11 +16,30 @@ import {
   XCircle,
 } from 'lucide-react';
 
+type DifficultyLevel = 'KS3' | 'GCSE' | 'A-Level';
+
 interface Connection {
   id: number;
   left: string;
   right: string;
   subject: string;
+  difficulty: DifficultyLevel;
+}
+
+// Helper function to get difficulty level from year group
+function getDifficultyFromYearGroup(yearGroup: YearGroup | undefined): DifficultyLevel {
+  if (!yearGroup || yearGroup <= 9) return 'KS3';
+  if (yearGroup <= 11) return 'GCSE';
+  return 'A-Level';
+}
+
+// Helper function to get difficulty label for display
+function getDifficultyLabel(difficulty: DifficultyLevel): string {
+  switch (difficulty) {
+    case 'KS3': return 'KS3 Level';
+    case 'GCSE': return 'GCSE Level';
+    case 'A-Level': return 'A-Level';
+  }
 }
 
 interface ConnectionItem {
@@ -31,34 +51,69 @@ interface ConnectionItem {
 }
 
 const CONNECTIONS: Connection[] = [
-  // Biology
-  { id: 1, left: 'Mitochondria', right: 'ATP production', subject: 'Biology' },
-  { id: 2, left: 'Chloroplast', right: 'Photosynthesis', subject: 'Biology' },
-  { id: 3, left: 'Nucleus', right: 'DNA storage', subject: 'Biology' },
-  { id: 4, left: 'Ribosome', right: 'Protein synthesis', subject: 'Biology' },
-  { id: 5, left: 'Cell membrane', right: 'Controls entry/exit', subject: 'Biology' },
-  { id: 6, left: 'Enzyme', right: 'Biological catalyst', subject: 'Biology' },
-  // Chemistry
-  { id: 7, left: 'Sodium', right: 'Na', subject: 'Chemistry' },
-  { id: 8, left: 'Potassium', right: 'K', subject: 'Chemistry' },
-  { id: 9, left: 'Iron', right: 'Fe', subject: 'Chemistry' },
-  { id: 10, left: 'Lead', right: 'Pb', subject: 'Chemistry' },
-  { id: 11, left: 'Oxidation', right: 'Loses electrons', subject: 'Chemistry' },
-  { id: 12, left: 'Reduction', right: 'Gains electrons', subject: 'Chemistry' },
-  // Physics
-  { id: 13, left: 'Voltage', right: 'V = IR', subject: 'Physics' },
-  { id: 14, left: 'Power', right: 'P = IV', subject: 'Physics' },
-  { id: 15, left: 'Momentum', right: 'p = mv', subject: 'Physics' },
-  { id: 16, left: 'Force', right: 'F = ma', subject: 'Physics' },
-  { id: 17, left: 'Kinetic energy', right: '½mv²', subject: 'Physics' },
-  { id: 18, left: 'Wave speed', right: 'v = fλ', subject: 'Physics' },
-  // Maths
-  { id: 19, left: 'Area of circle', right: 'πr²', subject: 'Maths' },
-  { id: 20, left: 'Circumference', right: '2πr', subject: 'Maths' },
-  { id: 21, left: 'Pythagoras', right: 'a² + b² = c²', subject: 'Maths' },
-  { id: 22, left: 'Quadratic', right: 'ax² + bx + c', subject: 'Maths' },
-  { id: 23, left: 'Gradient', right: 'Rise ÷ Run', subject: 'Maths' },
-  { id: 24, left: 'SOHCAHTOA', right: 'Trigonometry', subject: 'Maths' },
+  // Biology - KS3
+  { id: 1, left: 'Nucleus', right: 'Controls the cell', subject: 'Biology', difficulty: 'KS3' },
+  { id: 2, left: 'Cell membrane', right: 'Controls entry/exit', subject: 'Biology', difficulty: 'KS3' },
+  { id: 3, left: 'Chloroplast', right: 'Photosynthesis', subject: 'Biology', difficulty: 'KS3' },
+  { id: 4, left: 'Vacuole', right: 'Stores water', subject: 'Biology', difficulty: 'KS3' },
+  // Biology - GCSE
+  { id: 5, left: 'Mitochondria', right: 'ATP production', subject: 'Biology', difficulty: 'GCSE' },
+  { id: 6, left: 'Ribosome', right: 'Protein synthesis', subject: 'Biology', difficulty: 'GCSE' },
+  { id: 7, left: 'Enzyme', right: 'Biological catalyst', subject: 'Biology', difficulty: 'GCSE' },
+  { id: 8, left: 'Osmosis', right: 'Water movement', subject: 'Biology', difficulty: 'GCSE' },
+  // Biology - A-Level
+  { id: 9, left: 'Krebs cycle', right: 'Acetyl CoA oxidation', subject: 'Biology', difficulty: 'A-Level' },
+  { id: 10, left: 'Calvin cycle', right: 'Carbon fixation', subject: 'Biology', difficulty: 'A-Level' },
+  { id: 11, left: 'Chemiosmosis', right: 'ATP synthase', subject: 'Biology', difficulty: 'A-Level' },
+  { id: 12, left: 'Glycolysis', right: 'Pyruvate production', subject: 'Biology', difficulty: 'A-Level' },
+
+  // Chemistry - KS3
+  { id: 13, left: 'Sodium', right: 'Na', subject: 'Chemistry', difficulty: 'KS3' },
+  { id: 14, left: 'Iron', right: 'Fe', subject: 'Chemistry', difficulty: 'KS3' },
+  { id: 15, left: 'Carbon dioxide', right: 'CO₂', subject: 'Chemistry', difficulty: 'KS3' },
+  { id: 16, left: 'Water', right: 'H₂O', subject: 'Chemistry', difficulty: 'KS3' },
+  // Chemistry - GCSE
+  { id: 17, left: 'Potassium', right: 'K', subject: 'Chemistry', difficulty: 'GCSE' },
+  { id: 18, left: 'Lead', right: 'Pb', subject: 'Chemistry', difficulty: 'GCSE' },
+  { id: 19, left: 'Oxidation', right: 'Loses electrons', subject: 'Chemistry', difficulty: 'GCSE' },
+  { id: 20, left: 'Reduction', right: 'Gains electrons', subject: 'Chemistry', difficulty: 'GCSE' },
+  // Chemistry - A-Level
+  { id: 21, left: 'Enthalpy', right: 'ΔH', subject: 'Chemistry', difficulty: 'A-Level' },
+  { id: 22, left: 'Entropy', right: 'ΔS', subject: 'Chemistry', difficulty: 'A-Level' },
+  { id: 23, left: 'Nucleophile', right: 'Electron donor', subject: 'Chemistry', difficulty: 'A-Level' },
+  { id: 24, left: 'Electrophile', right: 'Electron acceptor', subject: 'Chemistry', difficulty: 'A-Level' },
+
+  // Physics - KS3
+  { id: 25, left: 'Speed', right: 'Distance ÷ Time', subject: 'Physics', difficulty: 'KS3' },
+  { id: 26, left: 'Force', right: 'Push or pull', subject: 'Physics', difficulty: 'KS3' },
+  { id: 27, left: 'Energy', right: 'Joules (J)', subject: 'Physics', difficulty: 'KS3' },
+  { id: 28, left: 'Current', right: 'Amperes (A)', subject: 'Physics', difficulty: 'KS3' },
+  // Physics - GCSE
+  { id: 29, left: 'Voltage', right: 'V = IR', subject: 'Physics', difficulty: 'GCSE' },
+  { id: 30, left: 'Power', right: 'P = IV', subject: 'Physics', difficulty: 'GCSE' },
+  { id: 31, left: 'Momentum', right: 'p = mv', subject: 'Physics', difficulty: 'GCSE' },
+  { id: 32, left: 'Force', right: 'F = ma', subject: 'Physics', difficulty: 'GCSE' },
+  // Physics - A-Level
+  { id: 33, left: 'Kinetic energy', right: '½mv²', subject: 'Physics', difficulty: 'A-Level' },
+  { id: 34, left: 'Wave speed', right: 'v = fλ', subject: 'Physics', difficulty: 'A-Level' },
+  { id: 35, left: 'Gravitational PE', right: 'mgh', subject: 'Physics', difficulty: 'A-Level' },
+  { id: 36, left: 'Electric field', right: 'E = F/Q', subject: 'Physics', difficulty: 'A-Level' },
+
+  // Maths - KS3
+  { id: 37, left: 'Area of rectangle', right: 'Length × Width', subject: 'Maths', difficulty: 'KS3' },
+  { id: 38, left: 'Perimeter', right: 'Sum of all sides', subject: 'Maths', difficulty: 'KS3' },
+  { id: 39, left: 'Mean', right: 'Sum ÷ Count', subject: 'Maths', difficulty: 'KS3' },
+  { id: 40, left: 'Ratio', right: 'Comparison of values', subject: 'Maths', difficulty: 'KS3' },
+  // Maths - GCSE
+  { id: 41, left: 'Area of circle', right: 'πr²', subject: 'Maths', difficulty: 'GCSE' },
+  { id: 42, left: 'Circumference', right: '2πr', subject: 'Maths', difficulty: 'GCSE' },
+  { id: 43, left: 'Pythagoras', right: 'a² + b² = c²', subject: 'Maths', difficulty: 'GCSE' },
+  { id: 44, left: 'Gradient', right: 'Rise ÷ Run', subject: 'Maths', difficulty: 'GCSE' },
+  // Maths - A-Level
+  { id: 45, left: 'Quadratic formula', right: '(-b ± √(b²-4ac))/2a', subject: 'Maths', difficulty: 'A-Level' },
+  { id: 46, left: 'Derivative of sin(x)', right: 'cos(x)', subject: 'Maths', difficulty: 'A-Level' },
+  { id: 47, left: 'Integral of 1/x', right: 'ln|x| + C', subject: 'Maths', difficulty: 'A-Level' },
+  { id: 48, left: 'Chain rule', right: 'dy/dx = dy/du × du/dx', subject: 'Maths', difficulty: 'A-Level' },
 ];
 
 function shuffleArray<T>(array: T[]): T[] {
@@ -73,6 +128,20 @@ function shuffleArray<T>(array: T[]): T[] {
 export default function PowerConnectPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
+
+  // Get difficulty based on user's year group
+  const yearGroup = profile?.yearGroup;
+  const difficulty = getDifficultyFromYearGroup(yearGroup);
+  const difficultyLabel = getDifficultyLabel(difficulty);
+
+  // Filter connections based on difficulty level
+  // Include current level and below for variety
+  const availableConnections = CONNECTIONS.filter(c => {
+    if (difficulty === 'A-Level') return true; // A-Level can see all
+    if (difficulty === 'GCSE') return c.difficulty === 'KS3' || c.difficulty === 'GCSE';
+    return c.difficulty === 'KS3'; // KS3 only sees KS3
+  });
 
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [round, setRound] = useState(0);
@@ -88,7 +157,7 @@ export default function PowerConnectPage() {
   const [totalRounds] = useState(5);
 
   const startRound = (roundNum: number) => {
-    const roundConnections = shuffleArray(CONNECTIONS).slice(0, 4);
+    const roundConnections = shuffleArray(availableConnections).slice(0, 4);
 
     const left: ConnectionItem[] = roundConnections.map((c, i) => ({
       id: `left-${c.id}`,
@@ -224,9 +293,22 @@ export default function PowerConnectPage() {
           <h1 className="text-4xl font-black text-white mb-2 drop-shadow-lg">
             POWER CONNECT
           </h1>
-          <p className="text-white/80 mb-8 text-lg">
+          <p className="text-white/80 mb-4 text-lg">
             Connect matching concepts to power up!
           </p>
+
+          {/* Difficulty badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-2 mb-6 bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 border border-cyan-400/30 rounded-full">
+            <Zap size={16} className="text-cyan-400" />
+            <span className="text-cyan-300 font-semibold text-sm">
+              {difficultyLabel}
+            </span>
+            {yearGroup && (
+              <span className="text-white/50 text-xs">
+                (Year {yearGroup})
+              </span>
+            )}
+          </div>
 
           <div className="bg-white/10 rounded-xl p-4 mb-6 text-left">
             <ul className="text-white/70 text-sm space-y-2">

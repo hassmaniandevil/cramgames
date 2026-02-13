@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -15,12 +16,15 @@ import {
   FlaskConical,
 } from 'lucide-react';
 
+type DifficultyLevel = 'KS3' | 'GCSE' | 'A-Level';
+
 interface Formula {
   id: string;
   name: string;
   formula: string;
   subject: 'Physics' | 'Chemistry' | 'Maths';
   variables: { symbol: string; meaning: string }[];
+  difficulty: DifficultyLevel;
 }
 
 interface Question {
@@ -31,28 +35,17 @@ interface Question {
   options: string[];
 }
 
-const formulas: Formula[] = [
-  // Physics
+const allFormulas: Formula[] = [
+  // Physics - KS3 (simpler formulas)
   {
     id: 'p1',
     name: 'Speed',
     formula: 'v = d/t',
     subject: 'Physics',
+    difficulty: 'KS3',
     variables: [
       { symbol: 'v', meaning: 'speed (m/s)' },
       { symbol: 'd', meaning: 'distance (m)' },
-      { symbol: 't', meaning: 'time (s)' },
-    ],
-  },
-  {
-    id: 'p2',
-    name: 'Acceleration',
-    formula: 'a = (v-u)/t',
-    subject: 'Physics',
-    variables: [
-      { symbol: 'a', meaning: 'acceleration (m/s²)' },
-      { symbol: 'v', meaning: 'final velocity (m/s)' },
-      { symbol: 'u', meaning: 'initial velocity (m/s)' },
       { symbol: 't', meaning: 'time (s)' },
     ],
   },
@@ -61,6 +54,7 @@ const formulas: Formula[] = [
     name: 'Force',
     formula: 'F = ma',
     subject: 'Physics',
+    difficulty: 'KS3',
     variables: [
       { symbol: 'F', meaning: 'force (N)' },
       { symbol: 'm', meaning: 'mass (kg)' },
@@ -72,6 +66,7 @@ const formulas: Formula[] = [
     name: 'Weight',
     formula: 'W = mg',
     subject: 'Physics',
+    difficulty: 'KS3',
     variables: [
       { symbol: 'W', meaning: 'weight (N)' },
       { symbol: 'm', meaning: 'mass (kg)' },
@@ -79,10 +74,37 @@ const formulas: Formula[] = [
     ],
   },
   {
+    id: 'p10',
+    name: 'Density',
+    formula: 'ρ = m/V',
+    subject: 'Physics',
+    difficulty: 'KS3',
+    variables: [
+      { symbol: 'ρ', meaning: 'density (kg/m³)' },
+      { symbol: 'm', meaning: 'mass (kg)' },
+      { symbol: 'V', meaning: 'volume (m³)' },
+    ],
+  },
+  // Physics - GCSE
+  {
+    id: 'p2',
+    name: 'Acceleration',
+    formula: 'a = (v-u)/t',
+    subject: 'Physics',
+    difficulty: 'GCSE',
+    variables: [
+      { symbol: 'a', meaning: 'acceleration (m/s²)' },
+      { symbol: 'v', meaning: 'final velocity (m/s)' },
+      { symbol: 'u', meaning: 'initial velocity (m/s)' },
+      { symbol: 't', meaning: 'time (s)' },
+    ],
+  },
+  {
     id: 'p5',
     name: 'Work Done',
     formula: 'W = Fd',
     subject: 'Physics',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'W', meaning: 'work done (J)' },
       { symbol: 'F', meaning: 'force (N)' },
@@ -94,6 +116,7 @@ const formulas: Formula[] = [
     name: 'Kinetic Energy',
     formula: 'KE = ½mv²',
     subject: 'Physics',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'KE', meaning: 'kinetic energy (J)' },
       { symbol: 'm', meaning: 'mass (kg)' },
@@ -105,6 +128,7 @@ const formulas: Formula[] = [
     name: 'Gravitational Potential Energy',
     formula: 'GPE = mgh',
     subject: 'Physics',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'GPE', meaning: 'gravitational potential energy (J)' },
       { symbol: 'm', meaning: 'mass (kg)' },
@@ -117,6 +141,7 @@ const formulas: Formula[] = [
     name: 'Power',
     formula: 'P = W/t',
     subject: 'Physics',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'P', meaning: 'power (W)' },
       { symbol: 'W', meaning: 'work done (J)' },
@@ -128,6 +153,7 @@ const formulas: Formula[] = [
     name: 'Pressure',
     formula: 'p = F/A',
     subject: 'Physics',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'p', meaning: 'pressure (Pa)' },
       { symbol: 'F', meaning: 'force (N)' },
@@ -135,21 +161,11 @@ const formulas: Formula[] = [
     ],
   },
   {
-    id: 'p10',
-    name: 'Density',
-    formula: 'ρ = m/V',
-    subject: 'Physics',
-    variables: [
-      { symbol: 'ρ', meaning: 'density (kg/m³)' },
-      { symbol: 'm', meaning: 'mass (kg)' },
-      { symbol: 'V', meaning: 'volume (m³)' },
-    ],
-  },
-  {
     id: 'p11',
     name: "Ohm's Law",
     formula: 'V = IR',
     subject: 'Physics',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'V', meaning: 'voltage (V)' },
       { symbol: 'I', meaning: 'current (A)' },
@@ -161,18 +177,70 @@ const formulas: Formula[] = [
     name: 'Electrical Power',
     formula: 'P = IV',
     subject: 'Physics',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'P', meaning: 'power (W)' },
       { symbol: 'I', meaning: 'current (A)' },
       { symbol: 'V', meaning: 'voltage (V)' },
     ],
   },
-  // Chemistry
+  // Physics - A-Level
+  {
+    id: 'p13',
+    name: 'Momentum',
+    formula: 'p = mv',
+    subject: 'Physics',
+    difficulty: 'A-Level',
+    variables: [
+      { symbol: 'p', meaning: 'momentum (kg·m/s)' },
+      { symbol: 'm', meaning: 'mass (kg)' },
+      { symbol: 'v', meaning: 'velocity (m/s)' },
+    ],
+  },
+  {
+    id: 'p14',
+    name: 'Impulse',
+    formula: 'J = Ft',
+    subject: 'Physics',
+    difficulty: 'A-Level',
+    variables: [
+      { symbol: 'J', meaning: 'impulse (N·s)' },
+      { symbol: 'F', meaning: 'force (N)' },
+      { symbol: 't', meaning: 'time (s)' },
+    ],
+  },
+  {
+    id: 'p15',
+    name: 'Wave Speed',
+    formula: 'v = fλ',
+    subject: 'Physics',
+    difficulty: 'A-Level',
+    variables: [
+      { symbol: 'v', meaning: 'wave speed (m/s)' },
+      { symbol: 'f', meaning: 'frequency (Hz)' },
+      { symbol: 'λ', meaning: 'wavelength (m)' },
+    ],
+  },
+  {
+    id: 'p16',
+    name: 'Gravitational Force',
+    formula: 'F = Gm₁m₂/r²',
+    subject: 'Physics',
+    difficulty: 'A-Level',
+    variables: [
+      { symbol: 'F', meaning: 'gravitational force (N)' },
+      { symbol: 'G', meaning: 'gravitational constant' },
+      { symbol: 'm₁,m₂', meaning: 'masses (kg)' },
+      { symbol: 'r', meaning: 'distance (m)' },
+    ],
+  },
+  // Chemistry - GCSE
   {
     id: 'c1',
     name: 'Number of Moles (mass)',
     formula: 'n = m/Mr',
     subject: 'Chemistry',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'n', meaning: 'number of moles' },
       { symbol: 'm', meaning: 'mass (g)' },
@@ -184,18 +252,48 @@ const formulas: Formula[] = [
     name: 'Concentration',
     formula: 'c = n/V',
     subject: 'Chemistry',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'c', meaning: 'concentration (mol/dm³)' },
       { symbol: 'n', meaning: 'number of moles' },
       { symbol: 'V', meaning: 'volume (dm³)' },
     ],
   },
-  // Maths
+  // Chemistry - A-Level
+  {
+    id: 'c3',
+    name: 'Ideal Gas Law',
+    formula: 'pV = nRT',
+    subject: 'Chemistry',
+    difficulty: 'A-Level',
+    variables: [
+      { symbol: 'p', meaning: 'pressure (Pa)' },
+      { symbol: 'V', meaning: 'volume (m³)' },
+      { symbol: 'n', meaning: 'moles' },
+      { symbol: 'R', meaning: 'gas constant' },
+      { symbol: 'T', meaning: 'temperature (K)' },
+    ],
+  },
+  {
+    id: 'c4',
+    name: 'Enthalpy Change',
+    formula: 'ΔH = mcΔT',
+    subject: 'Chemistry',
+    difficulty: 'A-Level',
+    variables: [
+      { symbol: 'ΔH', meaning: 'enthalpy change (J)' },
+      { symbol: 'm', meaning: 'mass (g)' },
+      { symbol: 'c', meaning: 'specific heat capacity' },
+      { symbol: 'ΔT', meaning: 'temperature change (K)' },
+    ],
+  },
+  // Maths - KS3
   {
     id: 'm1',
     name: 'Area of Circle',
     formula: 'A = πr²',
     subject: 'Maths',
+    difficulty: 'KS3',
     variables: [
       { symbol: 'A', meaning: 'area' },
       { symbol: 'π', meaning: 'pi (≈3.14)' },
@@ -207,6 +305,7 @@ const formulas: Formula[] = [
     name: 'Circumference',
     formula: 'C = 2πr',
     subject: 'Maths',
+    difficulty: 'KS3',
     variables: [
       { symbol: 'C', meaning: 'circumference' },
       { symbol: 'π', meaning: 'pi (≈3.14)' },
@@ -218,25 +317,96 @@ const formulas: Formula[] = [
     name: 'Pythagoras Theorem',
     formula: 'a² + b² = c²',
     subject: 'Maths',
+    difficulty: 'KS3',
     variables: [
       { symbol: 'a', meaning: 'shorter side' },
       { symbol: 'b', meaning: 'shorter side' },
       { symbol: 'c', meaning: 'hypotenuse' },
     ],
   },
+  // Maths - GCSE
   {
     id: 'm4',
     name: 'Quadratic Formula',
     formula: 'x = (-b±√(b²-4ac))/2a',
     subject: 'Maths',
+    difficulty: 'GCSE',
     variables: [
       { symbol: 'x', meaning: 'solutions' },
       { symbol: 'a,b,c', meaning: 'coefficients from ax²+bx+c=0' },
     ],
   },
+  {
+    id: 'm5',
+    name: 'Sine Rule',
+    formula: 'a/sinA = b/sinB',
+    subject: 'Maths',
+    difficulty: 'GCSE',
+    variables: [
+      { symbol: 'a,b', meaning: 'sides' },
+      { symbol: 'A,B', meaning: 'opposite angles' },
+    ],
+  },
+  {
+    id: 'm6',
+    name: 'Cosine Rule',
+    formula: 'c² = a² + b² - 2ab·cosC',
+    subject: 'Maths',
+    difficulty: 'GCSE',
+    variables: [
+      { symbol: 'a,b,c', meaning: 'sides' },
+      { symbol: 'C', meaning: 'angle opposite to c' },
+    ],
+  },
+  // Maths - A-Level
+  {
+    id: 'm7',
+    name: 'Differentiation (Power Rule)',
+    formula: 'd/dx(xⁿ) = nxⁿ⁻¹',
+    subject: 'Maths',
+    difficulty: 'A-Level',
+    variables: [
+      { symbol: 'x', meaning: 'variable' },
+      { symbol: 'n', meaning: 'power' },
+    ],
+  },
+  {
+    id: 'm8',
+    name: 'Integration (Power Rule)',
+    formula: '∫xⁿdx = xⁿ⁺¹/(n+1) + c',
+    subject: 'Maths',
+    difficulty: 'A-Level',
+    variables: [
+      { symbol: 'x', meaning: 'variable' },
+      { symbol: 'n', meaning: 'power (n≠-1)' },
+      { symbol: 'c', meaning: 'constant' },
+    ],
+  },
 ];
 
-function generateQuestion(usedIds: Set<string>): Question | null {
+// Helper function to get difficulty level from year group
+function getDifficultyFromYearGroup(yearGroup: YearGroup): DifficultyLevel {
+  if (yearGroup >= 7 && yearGroup <= 9) return 'KS3';
+  if (yearGroup >= 10 && yearGroup <= 11) return 'GCSE';
+  return 'A-Level'; // Years 12-13
+}
+
+// Helper function to get formulas based on difficulty
+function getFormulasForDifficulty(difficulty: DifficultyLevel): Formula[] {
+  switch (difficulty) {
+    case 'KS3':
+      // KS3 only gets KS3 formulas
+      return allFormulas.filter(f => f.difficulty === 'KS3');
+    case 'GCSE':
+      // GCSE gets KS3 + GCSE formulas
+      return allFormulas.filter(f => f.difficulty === 'KS3' || f.difficulty === 'GCSE');
+    case 'A-Level':
+      // A-Level gets all formulas
+      return allFormulas;
+  }
+}
+
+function generateQuestion(usedIds: Set<string>, formulas: Formula[]): Question | null {
   const available = formulas.filter(f => !usedIds.has(f.id));
   if (available.length === 0) return null;
 
@@ -273,6 +443,12 @@ function generateQuestion(usedIds: Set<string>): Question | null {
 export default function FormulaFrenzyPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
+
+  // Get difficulty from user's year group (default to GCSE if not set)
+  const yearGroup = profile?.yearGroup ?? 10;
+  const difficulty = getDifficultyFromYearGroup(yearGroup);
+  const formulas = getFormulasForDifficulty(difficulty);
 
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [timeLeft, setTimeLeft] = useState(60);
@@ -288,7 +464,7 @@ export default function FormulaFrenzyPage() {
   const [correctAnswers, setCorrectAnswers] = useState(0);
 
   const newQuestion = () => {
-    const q = generateQuestion(usedIds);
+    const q = generateQuestion(usedIds, formulas);
     if (q) {
       setQuestion(q);
       setUsedIds(prev => {
@@ -299,7 +475,7 @@ export default function FormulaFrenzyPage() {
     } else {
       // Reset if we've used all formulas
       setUsedIds(new Set());
-      const fresh = generateQuestion(new Set());
+      const fresh = generateQuestion(new Set(), formulas);
       if (fresh) {
         setQuestion(fresh);
         setUsedIds(new Set([fresh.formula.id]));
@@ -381,9 +557,20 @@ export default function FormulaFrenzyPage() {
           <h1 className="text-3xl font-bold text-text-primary mb-2">
             Formula Frenzy
           </h1>
-          <p className="text-text-secondary mb-8">
+          <p className="text-text-secondary mb-4">
             Match formulas to their names! Physics, Chemistry & Maths equations.
           </p>
+
+          {/* Difficulty Badge */}
+          <div className="flex justify-center mb-6">
+            <span className={`px-4 py-2 rounded-full text-sm font-bold ${
+              difficulty === 'KS3' ? 'bg-pastel-green text-correct' :
+              difficulty === 'GCSE' ? 'bg-pastel-blue text-blue-600' :
+              'bg-pastel-purple text-accent'
+            }`}>
+              {difficulty} Level ({formulas.length} formulas)
+            </span>
+          </div>
 
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="card p-4 text-center">

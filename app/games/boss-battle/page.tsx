@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
 import { useLoreStore } from '@/lib/stores/loreStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -124,10 +125,25 @@ const BOSSES: Boss[] = [
   },
 ];
 
+// Helper function to get difficulty level from year group
+function getDifficultyFromYearGroup(yearGroup: YearGroup | undefined): { level: 'KS3' | 'GCSE' | 'A-Level'; label: string; color: string } {
+  if (!yearGroup || yearGroup <= 9) {
+    return { level: 'KS3', label: 'KS3 Difficulty', color: 'text-green-400' };
+  } else if (yearGroup <= 11) {
+    return { level: 'GCSE', label: 'GCSE Difficulty', color: 'text-yellow-400' };
+  } else {
+    return { level: 'A-Level', label: 'A-Level Difficulty', color: 'text-red-400' };
+  }
+}
+
 export default function BossBattlePage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
   const { unlockFragment } = useLoreStore();
+  const { profile } = useUserStore();
+
+  const yearGroup = profile?.yearGroup;
+  const difficulty = getDifficultyFromYearGroup(yearGroup);
 
   const [gameState, setGameState] = useState<'select' | 'battle' | 'victory' | 'defeat'>('select');
   const [currentBoss, setCurrentBoss] = useState<Boss | null>(null);
@@ -228,6 +244,11 @@ export default function BossBattlePage() {
             </div>
             <h1 className="text-3xl font-black text-white mb-2">BOSS BATTLE</h1>
             <p className="text-white/60">Defeat bosses to unlock legendary lore!</p>
+            <div className={`mt-3 inline-flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full ${difficulty.color}`}>
+              <Shield size={16} />
+              <span className="font-bold text-sm">{difficulty.label}</span>
+              {yearGroup && <span className="text-xs opacity-70">(Year {yearGroup})</span>}
+            </div>
           </motion.div>
 
           <div className="space-y-4">

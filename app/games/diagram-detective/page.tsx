@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -213,10 +214,28 @@ function generateQuestion(diagram: Diagram, answeredParts: Set<string>): Questio
   return { diagram, targetPart, options };
 }
 
+// Map year group to difficulty level
+function getDifficultyFromYearGroup(yearGroup: number): { level: string; label: string; color: string } {
+  if (yearGroup <= 6) {
+    return { level: 'Primary', label: 'Primary', color: 'bg-green-500/20 text-green-400 border-green-500/30' };
+  } else if (yearGroup <= 9) {
+    return { level: 'KS3', label: 'KS3', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+  } else if (yearGroup <= 11) {
+    return { level: 'GCSE', label: 'GCSE', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' };
+  } else {
+    return { level: 'A-Level', label: 'A-Level', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+  }
+}
+
 export default function DiagramDetectivePage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
 
+  const yearGroup = profile?.yearGroup || 9;
+  const difficulty = getDifficultyFromYearGroup(yearGroup);
+
+  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [diagramIndex, setDiagramIndex] = useState(0);
   const [answeredParts, setAnsweredParts] = useState<Set<string>>(new Set());
   const [question, setQuestion] = useState<Question | null>(null);
@@ -275,6 +294,7 @@ export default function DiagramDetectivePage() {
         setAnsweredParts(new Set());
       } else {
         setGameComplete(true);
+        setGameState('finished');
       }
     } else {
       loadQuestion();
@@ -288,8 +308,92 @@ export default function DiagramDetectivePage() {
     setTotalCorrect(0);
     setTotalQuestions(0);
     setGameComplete(false);
+    setGameState('playing');
     loadQuestion();
   };
+
+  // Ready screen
+  if (gameState === 'ready') {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center max-w-sm w-full"
+        >
+          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
+            <Search size={48} className="text-white" />
+          </div>
+
+          <h1 className="text-3xl font-bold text-text-primary mb-2">
+            Diagram Detective
+          </h1>
+          <p className="text-text-secondary mb-6">
+            Can you identify the parts of scientific diagrams?
+          </p>
+
+          {/* Difficulty badge */}
+          <div className="flex justify-center mb-6">
+            <span className={`px-4 py-2 rounded-full text-sm font-bold border ${difficulty.color}`}>
+              {difficulty.label} Level
+            </span>
+          </div>
+
+          {/* Settings display */}
+          <div className="card p-4 mb-6">
+            <span className="text-sm text-text-muted block mb-3">Your Settings</span>
+            <div className="space-y-2 text-left">
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Year Group:</span>
+                <span className="text-text-primary font-medium">Year {yearGroup}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Difficulty:</span>
+                <span className={`font-medium ${difficulty.color.split(' ')[1]}`}>{difficulty.label}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Diagrams:</span>
+                <span className="text-text-primary font-medium">{diagrams.length} to complete</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Parts per diagram:</span>
+                <span className="text-text-primary font-medium">{partsPerDiagram}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <div className="card p-4 text-center">
+              <Search size={24} className="text-purple-400 mx-auto mb-2" />
+              <p className="text-sm text-text-muted">Identify</p>
+            </div>
+            <div className="card p-4 text-center">
+              <Zap size={24} className="text-xp mx-auto mb-2" />
+              <p className="text-sm text-text-muted">+15 XP</p>
+            </div>
+            <div className="card p-4 text-center">
+              <Trophy size={24} className="text-pink-400 mx-auto mb-2" />
+              <p className="text-sm text-text-muted">Master</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setGameState('playing')}
+            className="w-full btn-primary py-4 text-lg font-bold"
+          >
+            Start Game
+          </button>
+
+          <button
+            onClick={() => router.push('/')}
+            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
+          >
+            Back to Home
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   // Complete screen
   if (gameComplete) {
@@ -314,9 +418,16 @@ export default function DiagramDetectivePage() {
           <h1 className="text-2xl font-bold text-text-primary mb-2">
             Diagram Expert!
           </h1>
-          <p className="text-text-secondary mb-6">
+          <p className="text-text-secondary mb-4">
             Great knowledge of scientific diagrams!
           </p>
+
+          {/* Difficulty badge */}
+          <div className="flex justify-center mb-6">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${difficulty.color}`}>
+              {difficulty.label} Level
+            </span>
+          </div>
 
           <div className="grid grid-cols-2 gap-4 mb-8">
             <div className="text-center">
@@ -409,6 +520,9 @@ export default function DiagramDetectivePage() {
                   'bg-pastel-yellow text-amber-600'
                 }`}>
                   {currentDiagram.subject}
+                </span>
+                <span className={`text-sm px-2 py-1 rounded-full border ${difficulty.color}`}>
+                  {difficulty.label}
                 </span>
               </div>
 

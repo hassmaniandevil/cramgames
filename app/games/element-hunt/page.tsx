@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -23,7 +24,27 @@ interface Element {
   fact: string;
 }
 
-const elements: Element[] = [
+// KS3 Elements - Simple, commonly encountered elements (Years 7-9)
+const ks3Elements: Element[] = [
+  { symbol: 'H', name: 'Hydrogen', atomicNumber: 1, group: 'Non-metal', fact: 'Lightest element, makes up 75% of the universe' },
+  { symbol: 'He', name: 'Helium', atomicNumber: 2, group: 'Noble Gas', fact: 'Used in balloons, makes your voice squeaky' },
+  { symbol: 'C', name: 'Carbon', atomicNumber: 6, group: 'Non-metal', fact: 'Basis of all organic life' },
+  { symbol: 'N', name: 'Nitrogen', atomicNumber: 7, group: 'Non-metal', fact: 'Makes up 78% of air' },
+  { symbol: 'O', name: 'Oxygen', atomicNumber: 8, group: 'Non-metal', fact: 'Essential for respiration' },
+  { symbol: 'Na', name: 'Sodium', atomicNumber: 11, group: 'Alkali Metal', fact: 'Reacts explosively with water' },
+  { symbol: 'Mg', name: 'Magnesium', atomicNumber: 12, group: 'Alkaline Earth', fact: 'Burns with bright white flame' },
+  { symbol: 'Al', name: 'Aluminium', atomicNumber: 13, group: 'Metal', fact: 'Most abundant metal in Earth\'s crust' },
+  { symbol: 'S', name: 'Sulfur', atomicNumber: 16, group: 'Non-metal', fact: 'Yellow solid, smells like rotten eggs' },
+  { symbol: 'Cl', name: 'Chlorine', atomicNumber: 17, group: 'Halogen', fact: 'Used to purify water' },
+  { symbol: 'K', name: 'Potassium', atomicNumber: 19, group: 'Alkali Metal', fact: 'Essential for nerve function' },
+  { symbol: 'Ca', name: 'Calcium', atomicNumber: 20, group: 'Alkaline Earth', fact: 'Found in bones and teeth' },
+  { symbol: 'Fe', name: 'Iron', atomicNumber: 26, group: 'Transition Metal', fact: 'Most common element on Earth by mass' },
+  { symbol: 'Cu', name: 'Copper', atomicNumber: 29, group: 'Transition Metal', fact: 'Excellent conductor, used in wiring' },
+  { symbol: 'Au', name: 'Gold', atomicNumber: 79, group: 'Transition Metal', fact: 'Does not tarnish or corrode' },
+];
+
+// GCSE Elements - All commonly tested elements (Years 10-11)
+const gcseElements: Element[] = [
   { symbol: 'H', name: 'Hydrogen', atomicNumber: 1, group: 'Non-metal', fact: 'Lightest element, makes up 75% of the universe' },
   { symbol: 'He', name: 'Helium', atomicNumber: 2, group: 'Noble Gas', fact: 'Used in balloons, makes your voice squeaky' },
   { symbol: 'Li', name: 'Lithium', atomicNumber: 3, group: 'Alkali Metal', fact: 'Used in rechargeable batteries' },
@@ -53,6 +74,58 @@ const elements: Element[] = [
   { symbol: 'Pb', name: 'Lead', atomicNumber: 82, group: 'Metal', fact: 'Dense metal, blocks radiation' },
 ];
 
+// A-Level Elements - Extended periodic table knowledge (Years 12-13)
+const aLevelElements: Element[] = [
+  ...gcseElements,
+  { symbol: 'Be', name: 'Beryllium', atomicNumber: 4, group: 'Alkaline Earth', fact: 'Lightweight but toxic, used in aerospace' },
+  { symbol: 'B', name: 'Boron', atomicNumber: 5, group: 'Metalloid', fact: 'Used in glass and detergents' },
+  { symbol: 'Sc', name: 'Scandium', atomicNumber: 21, group: 'Transition Metal', fact: 'Used in aluminium alloys for aircraft' },
+  { symbol: 'Ti', name: 'Titanium', atomicNumber: 22, group: 'Transition Metal', fact: 'Strong, lightweight, corrosion-resistant' },
+  { symbol: 'V', name: 'Vanadium', atomicNumber: 23, group: 'Transition Metal', fact: 'Used in steel alloys for tools' },
+  { symbol: 'Cr', name: 'Chromium', atomicNumber: 24, group: 'Transition Metal', fact: 'Used in stainless steel and chrome plating' },
+  { symbol: 'Mn', name: 'Manganese', atomicNumber: 25, group: 'Transition Metal', fact: 'Essential for steel production' },
+  { symbol: 'Co', name: 'Cobalt', atomicNumber: 27, group: 'Transition Metal', fact: 'Used in batteries and blue pigments' },
+  { symbol: 'Ni', name: 'Nickel', atomicNumber: 28, group: 'Transition Metal', fact: 'Used in coins and stainless steel' },
+  { symbol: 'Ga', name: 'Gallium', atomicNumber: 31, group: 'Metal', fact: 'Melts in your hand at 29.76C' },
+  { symbol: 'Ge', name: 'Germanium', atomicNumber: 32, group: 'Metalloid', fact: 'Used in semiconductors and fiber optics' },
+  { symbol: 'As', name: 'Arsenic', atomicNumber: 33, group: 'Metalloid', fact: 'Historic poison, now used in semiconductors' },
+  { symbol: 'Se', name: 'Selenium', atomicNumber: 34, group: 'Non-metal', fact: 'Used in solar cells and electronics' },
+  { symbol: 'Kr', name: 'Krypton', atomicNumber: 36, group: 'Noble Gas', fact: 'Used in photography flash lamps' },
+  { symbol: 'Rb', name: 'Rubidium', atomicNumber: 37, group: 'Alkali Metal', fact: 'Used in atomic clocks' },
+  { symbol: 'Sr', name: 'Strontium', atomicNumber: 38, group: 'Alkaline Earth', fact: 'Creates red colour in fireworks' },
+  { symbol: 'Pd', name: 'Palladium', atomicNumber: 46, group: 'Transition Metal', fact: 'Used in catalytic converters' },
+  { symbol: 'Sn', name: 'Tin', atomicNumber: 50, group: 'Metal', fact: 'Used in tin cans and solder' },
+  { symbol: 'Xe', name: 'Xenon', atomicNumber: 54, group: 'Noble Gas', fact: 'Used in camera flashes and anaesthesia' },
+  { symbol: 'Ba', name: 'Barium', atomicNumber: 56, group: 'Alkaline Earth', fact: 'Creates green colour in fireworks' },
+  { symbol: 'Pt', name: 'Platinum', atomicNumber: 78, group: 'Transition Metal', fact: 'Rarer than gold, used in catalysts' },
+  { symbol: 'U', name: 'Uranium', atomicNumber: 92, group: 'Actinide', fact: 'Radioactive, used in nuclear power' },
+];
+
+type DifficultyLevel = 'KS3' | 'GCSE' | 'A-Level';
+
+// Determine difficulty level based on year group
+function getDifficultyFromYearGroup(yearGroup: YearGroup | undefined): DifficultyLevel {
+  if (!yearGroup) return 'GCSE'; // Default to GCSE
+  if (yearGroup >= 7 && yearGroup <= 9) return 'KS3';
+  if (yearGroup >= 10 && yearGroup <= 11) return 'GCSE';
+  if (yearGroup >= 12) return 'A-Level';
+  return 'KS3'; // Primary years default to KS3
+}
+
+// Get elements based on difficulty
+function getElementsForDifficulty(difficulty: DifficultyLevel): Element[] {
+  switch (difficulty) {
+    case 'KS3':
+      return ks3Elements;
+    case 'GCSE':
+      return gcseElements;
+    case 'A-Level':
+      return aLevelElements;
+    default:
+      return gcseElements;
+  }
+}
+
 type QuestionType = 'symbol-to-name' | 'name-to-symbol' | 'atomic-number' | 'group';
 
 interface Question {
@@ -63,7 +136,7 @@ interface Question {
   options: string[];
 }
 
-function generateQuestion(): Question {
+function generateQuestion(elements: Element[]): Question {
   const element = elements[Math.floor(Math.random() * elements.length)];
   const types: QuestionType[] = ['symbol-to-name', 'name-to-symbol', 'atomic-number', 'group'];
   const type = types[Math.floor(Math.random() * types.length)];
@@ -119,6 +192,11 @@ function generateQuestion(): Question {
 export default function ElementHuntPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
+
+  // Determine difficulty based on user's year group
+  const difficulty = useMemo(() => getDifficultyFromYearGroup(profile?.yearGroup), [profile?.yearGroup]);
+  const elements = useMemo(() => getElementsForDifficulty(difficulty), [difficulty]);
 
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [timeLeft, setTimeLeft] = useState(60);
@@ -133,10 +211,10 @@ export default function ElementHuntPage() {
   const [correctAnswers, setCorrectAnswers] = useState(0);
 
   const newQuestion = useCallback(() => {
-    setQuestion(generateQuestion());
+    setQuestion(generateQuestion(elements));
     setSelectedAnswer(null);
     setShowFeedback(false);
-  }, []);
+  }, [elements]);
 
   const startGame = () => {
     setGameState('playing');
@@ -209,9 +287,18 @@ export default function ElementHuntPage() {
           <h1 className="text-3xl font-bold text-text-primary mb-2">
             Element Hunt
           </h1>
-          <p className="text-text-secondary mb-8">
+          <p className="text-text-secondary mb-4">
             Test your periodic table knowledge! Symbols, names, atomic numbers & groups.
           </p>
+
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/20 border border-accent/30 rounded-full mb-6">
+            <span className="text-sm font-medium text-accent">
+              Difficulty: {difficulty}
+            </span>
+            <span className="text-xs text-text-muted">
+              ({elements.length} elements)
+            </span>
+          </div>
 
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="card p-4 text-center">

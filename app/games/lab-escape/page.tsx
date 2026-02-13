@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
 import { useLoreStore } from '@/lib/stores/loreStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -29,9 +30,27 @@ interface Puzzle {
   options: string[];
   subject: string;
   explanation: string;
+  difficulty: 'KS3' | 'GCSE' | 'A-Level';
 }
 
-const PUZZLES: Puzzle[] = [
+// Helper function to get difficulty level from year group
+function getDifficultyFromYearGroup(yearGroup: YearGroup): 'KS3' | 'GCSE' | 'A-Level' {
+  if (yearGroup <= 9) return 'KS3';
+  if (yearGroup <= 11) return 'GCSE';
+  return 'A-Level';
+}
+
+// Helper function to get difficulty label for display
+function getDifficultyLabel(difficulty: 'KS3' | 'GCSE' | 'A-Level'): string {
+  switch (difficulty) {
+    case 'KS3': return 'KS3 (Years 7-9)';
+    case 'GCSE': return 'GCSE (Years 10-11)';
+    case 'A-Level': return 'A-Level (Years 12-13)';
+  }
+}
+
+const ALL_PUZZLES: Puzzle[] = [
+  // KS3 Puzzles
   {
     id: 1,
     roomName: 'The Chemical Chamber',
@@ -42,6 +61,7 @@ const PUZZLES: Puzzle[] = [
     options: ['Silver (Ag)', 'Gold (Au)', 'Iron (Fe)', 'Copper (Cu)'],
     subject: 'Chemistry',
     explanation: 'Gold has atomic number 79 and symbol Au (from Latin "aurum").',
+    difficulty: 'KS3',
   },
   {
     id: 2,
@@ -53,6 +73,7 @@ const PUZZLES: Puzzle[] = [
     options: ['Nucleus', 'Mitochondria', 'Chloroplast', 'Ribosome'],
     subject: 'Biology',
     explanation: 'Mitochondria perform cellular respiration, converting glucose to ATP.',
+    difficulty: 'KS3',
   },
   {
     id: 3,
@@ -64,6 +85,7 @@ const PUZZLES: Puzzle[] = [
     options: ['7V', '10V', '2.5V', '3V'],
     subject: 'Physics',
     explanation: 'Using Ohm\'s Law: V = I × R = 2 × 5 = 10 volts.',
+    difficulty: 'KS3',
   },
   {
     id: 4,
@@ -75,6 +97,7 @@ const PUZZLES: Puzzle[] = [
     options: ['12', '6', '10', '7.5'],
     subject: 'Maths',
     explanation: 'For a right triangle: Area = ½ × base × height = ½ × 3 × 4 = 6.',
+    difficulty: 'KS3',
   },
   {
     id: 5,
@@ -86,6 +109,7 @@ const PUZZLES: Puzzle[] = [
     options: ['Potassium', 'Sodium', 'Lithium', 'Calcium'],
     subject: 'Chemistry',
     explanation: 'Sodium (Na) has atomic number 11 and is a highly reactive alkali metal.',
+    difficulty: 'KS3',
   },
   {
     id: 6,
@@ -97,6 +121,7 @@ const PUZZLES: Puzzle[] = [
     options: ['Guanine', 'Cytosine', 'Thymine', 'Adenine'],
     subject: 'Biology',
     explanation: 'In DNA, Adenine always pairs with Thymine (A-T), and Cytosine with Guanine (C-G).',
+    difficulty: 'KS3',
   },
   {
     id: 7,
@@ -108,6 +133,7 @@ const PUZZLES: Puzzle[] = [
     options: ['13N', '30N', '3.3N', '7N'],
     subject: 'Physics',
     explanation: 'Using Newton\'s Second Law: F = m × a = 10 × 3 = 30 Newtons.',
+    difficulty: 'KS3',
   },
   {
     id: 8,
@@ -119,13 +145,220 @@ const PUZZLES: Puzzle[] = [
     options: ['44', '154', '49', '308'],
     subject: 'Maths',
     explanation: 'Area = πr² = (22/7) × 7² = (22/7) × 49 = 22 × 7 = 154.',
+    difficulty: 'KS3',
+  },
+  // GCSE Puzzles
+  {
+    id: 9,
+    roomName: 'The Electrochemistry Lab',
+    roomEmoji: '🔋',
+    riddle: 'In electrolysis of copper sulfate, what forms at the cathode?',
+    hint: 'Reduction happens at the cathode...',
+    answer: 'Copper metal',
+    options: ['Oxygen gas', 'Copper metal', 'Hydrogen gas', 'Sulfur'],
+    subject: 'Chemistry',
+    explanation: 'Cu²⁺ ions gain electrons at the cathode (reduction) to form copper metal.',
+    difficulty: 'GCSE',
+  },
+  {
+    id: 10,
+    roomName: 'The Genetics Room',
+    roomEmoji: '🧬',
+    riddle: 'If a heterozygous tall pea plant (Tt) crosses with a short plant (tt), what fraction will be tall?',
+    hint: 'Draw a Punnett square...',
+    answer: '1/2',
+    options: ['1/4', '1/2', '3/4', 'All'],
+    subject: 'Biology',
+    explanation: 'Tt × tt gives Tt, Tt, tt, tt. Half (2/4 = 1/2) are tall (Tt).',
+    difficulty: 'GCSE',
+  },
+  {
+    id: 11,
+    roomName: 'The Wave Chamber',
+    roomEmoji: '🌊',
+    riddle: 'A wave has frequency 50Hz and wavelength 2m. What is its speed?',
+    hint: 'v = fλ...',
+    answer: '100 m/s',
+    options: ['25 m/s', '52 m/s', '100 m/s', '48 m/s'],
+    subject: 'Physics',
+    explanation: 'Using v = fλ: v = 50 × 2 = 100 m/s.',
+    difficulty: 'GCSE',
+  },
+  {
+    id: 12,
+    roomName: 'The Quadratic Vault',
+    roomEmoji: '📐',
+    riddle: 'Solve x² - 5x + 6 = 0. What are the solutions?',
+    hint: 'Factorise: (x-?)(x-?) = 0...',
+    answer: 'x = 2, x = 3',
+    options: ['x = 1, x = 6', 'x = 2, x = 3', 'x = -2, x = -3', 'x = 5, x = 1'],
+    subject: 'Maths',
+    explanation: 'x² - 5x + 6 = (x-2)(x-3) = 0, so x = 2 or x = 3.',
+    difficulty: 'GCSE',
+  },
+  {
+    id: 13,
+    roomName: 'The Acid-Base Lab',
+    roomEmoji: '🧪',
+    riddle: 'What is the pH of a solution with [H⁺] = 0.001 mol/dm³?',
+    hint: 'pH = -log₁₀[H⁺]...',
+    answer: '3',
+    options: ['1', '3', '0.001', '7'],
+    subject: 'Chemistry',
+    explanation: 'pH = -log₁₀(0.001) = -log₁₀(10⁻³) = 3.',
+    difficulty: 'GCSE',
+  },
+  {
+    id: 14,
+    roomName: 'The Heart Room',
+    roomEmoji: '❤️',
+    riddle: 'Which blood vessel carries deoxygenated blood FROM the heart to the lungs?',
+    hint: 'It\'s an artery, but special...',
+    answer: 'Pulmonary artery',
+    options: ['Pulmonary vein', 'Pulmonary artery', 'Aorta', 'Vena cava'],
+    subject: 'Biology',
+    explanation: 'The pulmonary artery is unique - it carries deoxygenated blood from the right ventricle to the lungs.',
+    difficulty: 'GCSE',
+  },
+  {
+    id: 15,
+    roomName: 'The Energy Vault',
+    roomEmoji: '⚡',
+    riddle: 'A 2kg object is lifted 5m. What gravitational potential energy does it gain? (g = 10 m/s²)',
+    hint: 'GPE = mgh...',
+    answer: '100 J',
+    options: ['10 J', '50 J', '100 J', '17 J'],
+    subject: 'Physics',
+    explanation: 'GPE = mgh = 2 × 10 × 5 = 100 Joules.',
+    difficulty: 'GCSE',
+  },
+  {
+    id: 16,
+    roomName: 'The Trigonometry Chamber',
+    roomEmoji: '📏',
+    riddle: 'In a right triangle, if sin(θ) = 0.6 and cos(θ) = 0.8, what is tan(θ)?',
+    hint: 'tan = sin/cos...',
+    answer: '0.75',
+    options: ['1.4', '0.48', '0.75', '1.33'],
+    subject: 'Maths',
+    explanation: 'tan(θ) = sin(θ)/cos(θ) = 0.6/0.8 = 0.75.',
+    difficulty: 'GCSE',
+  },
+  // A-Level Puzzles
+  {
+    id: 17,
+    roomName: 'The Organic Lab',
+    roomEmoji: '⚗️',
+    riddle: 'What type of reaction mechanism does a tertiary halogenoalkane undergo with aqueous NaOH?',
+    hint: 'Tertiary carbons favor elimination or one-step substitution...',
+    answer: 'SN1',
+    options: ['SN1', 'SN2', 'E1', 'E2'],
+    subject: 'Chemistry',
+    explanation: 'Tertiary halogenoalkanes undergo SN1 due to steric hindrance preventing SN2, and the stable tertiary carbocation intermediate.',
+    difficulty: 'A-Level',
+  },
+  {
+    id: 18,
+    roomName: 'The Protein Chamber',
+    roomEmoji: '🧬',
+    riddle: 'What is the maximum number of ATP molecules produced from one glucose molecule via aerobic respiration?',
+    hint: 'Glycolysis + Link + Krebs + ETC...',
+    answer: '38',
+    options: ['2', '36', '38', '4'],
+    subject: 'Biology',
+    explanation: 'Theoretical maximum: Glycolysis (2) + Link reaction (2) + Krebs (2) + Oxidative phosphorylation (32) = 38 ATP.',
+    difficulty: 'A-Level',
+  },
+  {
+    id: 19,
+    roomName: 'The Quantum Vault',
+    roomEmoji: '⚛️',
+    riddle: 'A photon has wavelength 500nm. What is its energy? (h = 6.63×10⁻³⁴ Js, c = 3×10⁸ m/s)',
+    hint: 'E = hf = hc/λ...',
+    answer: '3.98×10⁻¹⁹ J',
+    options: ['3.98×10⁻¹⁹ J', '1.33×10⁻²⁷ J', '9.95×10⁻²⁶ J', '3.98×10⁻²⁵ J'],
+    subject: 'Physics',
+    explanation: 'E = hc/λ = (6.63×10⁻³⁴ × 3×10⁸)/(500×10⁻⁹) = 3.98×10⁻¹⁹ J.',
+    difficulty: 'A-Level',
+  },
+  {
+    id: 20,
+    roomName: 'The Calculus Chamber',
+    roomEmoji: '∫',
+    riddle: 'What is the integral of e^(2x) dx?',
+    hint: 'Remember the chain rule in reverse...',
+    answer: '(1/2)e^(2x) + C',
+    options: ['e^(2x) + C', '2e^(2x) + C', '(1/2)e^(2x) + C', 'e^(x²) + C'],
+    subject: 'Maths',
+    explanation: '∫e^(2x)dx = (1/2)e^(2x) + C. Divide by the coefficient of x.',
+    difficulty: 'A-Level',
+  },
+  {
+    id: 21,
+    roomName: 'The Equilibrium Lab',
+    roomEmoji: '⚖️',
+    riddle: 'For the reaction N₂ + 3H₂ ⇌ 2NH₃, what happens to yield when pressure increases?',
+    hint: 'Le Chatelier\'s principle - count the moles...',
+    answer: 'Increases',
+    options: ['Increases', 'Decreases', 'No change', 'Oscillates'],
+    subject: 'Chemistry',
+    explanation: 'Higher pressure favors the side with fewer gas moles. 4 moles → 2 moles, so equilibrium shifts right, increasing NH₃ yield.',
+    difficulty: 'A-Level',
+  },
+  {
+    id: 22,
+    roomName: 'The Evolution Room',
+    roomEmoji: '🦎',
+    riddle: 'Which type of selection results in two distinct phenotypes and a bimodal distribution?',
+    hint: 'It\'s not stabilizing or directional...',
+    answer: 'Disruptive selection',
+    options: ['Stabilizing selection', 'Directional selection', 'Disruptive selection', 'Balancing selection'],
+    subject: 'Biology',
+    explanation: 'Disruptive selection favors extreme phenotypes over intermediate ones, creating a bimodal distribution.',
+    difficulty: 'A-Level',
+  },
+  {
+    id: 23,
+    roomName: 'The Relativity Chamber',
+    roomEmoji: '🌌',
+    riddle: 'A particle travels at 0.8c. What is its Lorentz factor γ?',
+    hint: 'γ = 1/√(1-v²/c²)...',
+    answer: '5/3',
+    options: ['1.25', '5/3', '0.6', '2'],
+    subject: 'Physics',
+    explanation: 'γ = 1/√(1-0.64) = 1/√0.36 = 1/0.6 = 5/3 ≈ 1.67.',
+    difficulty: 'A-Level',
+  },
+  {
+    id: 24,
+    roomName: 'The Complex Plane',
+    roomEmoji: '🔮',
+    riddle: 'What is the modulus of the complex number 3 + 4i?',
+    hint: '|z| = √(a² + b²)...',
+    answer: '5',
+    options: ['7', '5', '1', '√7'],
+    subject: 'Maths',
+    explanation: '|3 + 4i| = √(3² + 4²) = √(9 + 16) = √25 = 5.',
+    difficulty: 'A-Level',
   },
 ];
+
+// Filter puzzles by difficulty
+function getPuzzlesForDifficulty(difficulty: 'KS3' | 'GCSE' | 'A-Level'): Puzzle[] {
+  return ALL_PUZZLES.filter(p => p.difficulty === difficulty).slice(0, 8);
+}
 
 export default function LabEscapePage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
   const { unlockFragment } = useLoreStore();
+  const { profile } = useUserStore();
+
+  // Get difficulty based on user's year group
+  const yearGroup = profile?.yearGroup ?? 10;
+  const difficulty = getDifficultyFromYearGroup(yearGroup);
+  const difficultyLabel = getDifficultyLabel(difficulty);
+  const puzzles = getPuzzlesForDifficulty(difficulty);
 
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'escaped' | 'failed'>('ready');
   const [currentPuzzle, setCurrentPuzzle] = useState(0);
@@ -179,7 +412,7 @@ export default function LabEscapePage() {
     if (isCorrect !== null) return;
 
     setSelectedAnswer(answer);
-    const puzzle = PUZZLES[currentPuzzle];
+    const puzzle = puzzles[currentPuzzle];
     const correct = answer === puzzle.answer;
     setIsCorrect(correct);
 
@@ -198,7 +431,7 @@ export default function LabEscapePage() {
   };
 
   const nextRoom = () => {
-    if (currentPuzzle < PUZZLES.length - 1) {
+    if (currentPuzzle < puzzles.length - 1) {
       setCurrentPuzzle(p => p + 1);
       setSelectedAnswer(null);
       setShowHint(false);
@@ -221,7 +454,7 @@ export default function LabEscapePage() {
     }
   };
 
-  const puzzle = PUZZLES[currentPuzzle];
+  const puzzle = puzzles[currentPuzzle];
 
   // Ready screen
   if (gameState === 'ready') {
@@ -243,9 +476,17 @@ export default function LabEscapePage() {
           <h1 className="text-4xl font-black text-white mb-2 drop-shadow-lg">
             LAB ESCAPE
           </h1>
-          <p className="text-white/80 mb-8 text-lg">
+          <p className="text-white/80 mb-4 text-lg">
             Solve science puzzles to escape the lab!
           </p>
+
+          <div className="bg-gradient-to-r from-amber-500/20 to-red-500/20 rounded-xl px-4 py-2 mb-6 border border-amber-500/30">
+            <div className="flex items-center justify-center gap-2">
+              <Zap size={16} className="text-amber-400" />
+              <span className="font-bold text-amber-400 text-sm">DIFFICULTY: {difficulty}</span>
+            </div>
+            <p className="text-white/60 text-xs text-center mt-1">{difficultyLabel}</p>
+          </div>
 
           <div className="bg-white/10 rounded-xl p-4 mb-6 text-left space-y-2">
             <div className="flex items-center gap-2 text-amber-400">
@@ -253,7 +494,7 @@ export default function LabEscapePage() {
               <span className="font-bold text-sm">MISSION BRIEFING</span>
             </div>
             <p className="text-white/70 text-sm">
-              You're trapped in a science lab! Solve 8 puzzles to unlock each room and escape.
+              You're trapped in a science lab! Solve {puzzles.length} puzzles to unlock each room and escape.
             </p>
             <ul className="text-white/60 text-sm space-y-1 ml-4">
               <li>• 5 minute time limit</li>
@@ -301,7 +542,7 @@ export default function LabEscapePage() {
           </motion.div>
 
           <h1 className="text-4xl font-black text-white mb-2">YOU ESCAPED!</h1>
-          <p className="text-white/70 mb-6">All {PUZZLES.length} rooms completed!</p>
+          <p className="text-white/70 mb-6">All {puzzles.length} rooms completed!</p>
 
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="bg-white/10 rounded-xl p-4">
@@ -309,7 +550,7 @@ export default function LabEscapePage() {
               <div className="text-xs text-white/60">XP</div>
             </div>
             <div className="bg-white/10 rounded-xl p-4">
-              <div className="text-3xl font-black text-green-400">{PUZZLES.length - mistakes}</div>
+              <div className="text-3xl font-black text-green-400">{puzzles.length - mistakes}</div>
               <div className="text-xs text-white/60">PERFECT</div>
             </div>
             <div className="bg-white/10 rounded-xl p-4">
@@ -357,7 +598,7 @@ export default function LabEscapePage() {
           </motion.div>
 
           <h1 className="text-4xl font-black text-white mb-2">TIME'S UP!</h1>
-          <p className="text-white/70 mb-6">You reached room {currentPuzzle + 1} of {PUZZLES.length}</p>
+          <p className="text-white/70 mb-6">You reached room {currentPuzzle + 1} of {puzzles.length}</p>
 
           <div className="bg-white/10 rounded-xl p-4 mb-8">
             <div className="text-3xl font-black text-yellow-400">{Math.floor(score / 2)}</div>
@@ -412,7 +653,7 @@ export default function LabEscapePage() {
       {/* Progress */}
       <div className="px-4 py-2">
         <div className="flex items-center gap-2 mb-2">
-          {PUZZLES.map((_, i) => (
+          {puzzles.map((_, i) => (
             <motion.div
               key={i}
               className={`flex-1 h-2 rounded-full ${
@@ -427,7 +668,7 @@ export default function LabEscapePage() {
             />
           ))}
         </div>
-        <p className="text-center text-white/50 text-xs">Room {currentPuzzle + 1} of {PUZZLES.length}</p>
+        <p className="text-center text-white/50 text-xs">Room {currentPuzzle + 1} of {puzzles.length}</p>
       </div>
 
       {/* Room */}
@@ -539,7 +780,7 @@ export default function LabEscapePage() {
               onClick={nextRoom}
               className="w-full py-4 font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl flex items-center justify-center gap-2"
             >
-              {currentPuzzle < PUZZLES.length - 1 ? (
+              {currentPuzzle < puzzles.length - 1 ? (
                 <>
                   Next Room
                   <ArrowRight size={20} />

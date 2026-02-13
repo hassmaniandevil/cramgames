@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, Reorder } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -14,6 +15,8 @@ import {
   GripVertical,
   CheckCircle,
   XCircle,
+  Play,
+  BookOpen,
 } from 'lucide-react';
 
 interface TimelineEvent {
@@ -154,10 +157,25 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
+// Get difficulty level label from year group
+function getDifficultyFromYearGroup(yearGroup: YearGroup): { level: string; label: string; color: string } {
+  if (yearGroup >= 7 && yearGroup <= 9) {
+    return { level: 'KS3', label: 'Key Stage 3', color: 'text-blue-400' };
+  } else if (yearGroup >= 10 && yearGroup <= 11) {
+    return { level: 'GCSE', label: 'GCSE Level', color: 'text-purple-400' };
+  } else if (yearGroup >= 12 && yearGroup <= 13) {
+    return { level: 'A-Level', label: 'A-Level', color: 'text-amber-400' };
+  }
+  // Default for primary years
+  return { level: 'Foundation', label: 'Foundation Level', color: 'text-green-400' };
+}
+
 export default function TimelineChallengePage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
 
+  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [orderedEvents, setOrderedEvents] = useState<TimelineEvent[]>([]);
   const [showResult, setShowResult] = useState(false);
@@ -165,6 +183,8 @@ export default function TimelineChallengePage() {
   const [gameComplete, setGameComplete] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
 
+  const yearGroup = profile?.yearGroup || 10;
+  const difficulty = getDifficultyFromYearGroup(yearGroup);
   const challenge = challenges[currentIndex];
 
   useEffect(() => {
@@ -210,7 +230,86 @@ export default function TimelineChallengePage() {
     setShowResult(false);
     setScore(0);
     setGameComplete(false);
+    setGameState('ready');
   };
+
+  const startGame = () => {
+    setGameState('playing');
+  };
+
+  // Ready screen
+  if (gameState === 'ready') {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="card p-8 w-full max-w-md text-center"
+        >
+          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-accent to-purple-600 flex items-center justify-center">
+            <Clock size={48} className="text-white" />
+          </div>
+
+          <h1 className="text-3xl font-bold text-text-primary mb-2">
+            Timeline Challenge
+          </h1>
+          <p className="text-text-secondary mb-6">
+            Drag and drop to arrange events in the correct order!
+          </p>
+
+          {/* Difficulty Badge */}
+          <div className="bg-surface-elevated rounded-xl p-4 mb-6 border border-white/10">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <BookOpen size={20} className={difficulty.color} />
+              <span className={`text-lg font-bold ${difficulty.color}`}>
+                {difficulty.level}
+              </span>
+            </div>
+            <div className="space-y-2 text-left">
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Difficulty:</span>
+                <span className={`font-medium ${difficulty.color}`}>{difficulty.label}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Year Group:</span>
+                <span className="text-text-primary font-medium">Year {yearGroup}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">Challenges:</span>
+                <span className="text-text-primary font-medium">{challenges.length} timelines</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className="bg-surface-elevated rounded-xl p-4 text-center border border-white/10">
+              <GripVertical size={24} className="text-accent mx-auto mb-2" />
+              <p className="text-sm text-text-muted">Drag to reorder</p>
+            </div>
+            <div className="bg-surface-elevated rounded-xl p-4 text-center border border-white/10">
+              <Zap size={24} className="text-xp mx-auto mb-2" />
+              <p className="text-sm text-text-muted">Earn XP</p>
+            </div>
+          </div>
+
+          <button
+            onClick={startGame}
+            className="w-full btn-primary py-4 flex items-center justify-center gap-2"
+          >
+            <Play size={20} />
+            Start Challenge
+          </button>
+
+          <button
+            onClick={() => router.push('/')}
+            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
+          >
+            Back to Home
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   // Complete screen
   if (gameComplete) {

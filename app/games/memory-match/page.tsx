@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -27,38 +28,109 @@ interface Pair {
   term: string;
   definition: string;
   subject: string;
+  difficulty: 'ks3' | 'gcse' | 'alevel';
 }
 
-const pairs: Pair[] = [
-  // Biology
-  { term: 'Mitosis', definition: 'Cell division for growth', subject: 'Biology' },
-  { term: 'Meiosis', definition: 'Cell division for gametes', subject: 'Biology' },
-  { term: 'Enzyme', definition: 'Biological catalyst', subject: 'Biology' },
-  { term: 'Nucleus', definition: 'Contains DNA', subject: 'Biology' },
-  { term: 'Chloroplast', definition: 'Site of photosynthesis', subject: 'Biology' },
-  { term: 'Mitochondria', definition: 'Releases energy (ATP)', subject: 'Biology' },
-  { term: 'Osmosis', definition: 'Water through membrane', subject: 'Biology' },
-  { term: 'Stomata', definition: 'Leaf pores for gas exchange', subject: 'Biology' },
+type DifficultyLevel = 'KS3' | 'GCSE' | 'A-Level';
 
-  // Chemistry
-  { term: 'Covalent bond', definition: 'Shared electrons', subject: 'Chemistry' },
-  { term: 'Ionic bond', definition: 'Electron transfer', subject: 'Chemistry' },
-  { term: 'Catalyst', definition: 'Speeds up reaction', subject: 'Chemistry' },
-  { term: 'Electrolysis', definition: 'Splits using electricity', subject: 'Chemistry' },
-  { term: 'Oxidation', definition: 'Loss of electrons', subject: 'Chemistry' },
-  { term: 'Reduction', definition: 'Gain of electrons', subject: 'Chemistry' },
-  { term: 'Acid', definition: 'pH less than 7', subject: 'Chemistry' },
-  { term: 'Alkali', definition: 'pH more than 7', subject: 'Chemistry' },
+// Helper to get difficulty level from year group
+function getDifficultyFromYearGroup(yearGroup: number): { level: DifficultyLevel; filter: ('ks3' | 'gcse' | 'alevel')[] } {
+  if (yearGroup <= 9) {
+    // Years 7-9: KS3
+    return { level: 'KS3', filter: ['ks3'] };
+  } else if (yearGroup <= 11) {
+    // Years 10-11: GCSE
+    return { level: 'GCSE', filter: ['ks3', 'gcse'] };
+  } else {
+    // Years 12-13: A-Level
+    return { level: 'A-Level', filter: ['ks3', 'gcse', 'alevel'] };
+  }
+}
 
-  // Physics
-  { term: 'Velocity', definition: 'Speed + direction', subject: 'Physics' },
-  { term: 'Acceleration', definition: 'Change in velocity', subject: 'Physics' },
-  { term: 'Momentum', definition: 'Mass × velocity', subject: 'Physics' },
-  { term: 'Frequency', definition: 'Waves per second', subject: 'Physics' },
-  { term: 'Wavelength', definition: 'Distance between peaks', subject: 'Physics' },
-  { term: 'Resistance', definition: 'Opposes current', subject: 'Physics' },
-  { term: 'Voltage', definition: 'Electrical push', subject: 'Physics' },
-  { term: 'Power', definition: 'Energy per second', subject: 'Physics' },
+const allPairs: Pair[] = [
+  // KS3 Biology - Basic concepts
+  { term: 'Cell', definition: 'Basic unit of life', subject: 'Biology', difficulty: 'ks3' },
+  { term: 'Nucleus', definition: 'Contains DNA', subject: 'Biology', difficulty: 'ks3' },
+  { term: 'Photosynthesis', definition: 'Plants make food', subject: 'Biology', difficulty: 'ks3' },
+  { term: 'Respiration', definition: 'Releases energy', subject: 'Biology', difficulty: 'ks3' },
+  { term: 'Digestion', definition: 'Breaks down food', subject: 'Biology', difficulty: 'ks3' },
+  { term: 'Vertebrate', definition: 'Animal with backbone', subject: 'Biology', difficulty: 'ks3' },
+
+  // KS3 Chemistry - Basic concepts
+  { term: 'Atom', definition: 'Smallest particle', subject: 'Chemistry', difficulty: 'ks3' },
+  { term: 'Element', definition: 'One type of atom', subject: 'Chemistry', difficulty: 'ks3' },
+  { term: 'Compound', definition: 'Two+ elements bonded', subject: 'Chemistry', difficulty: 'ks3' },
+  { term: 'Mixture', definition: 'Not chemically joined', subject: 'Chemistry', difficulty: 'ks3' },
+  { term: 'Acid', definition: 'pH less than 7', subject: 'Chemistry', difficulty: 'ks3' },
+  { term: 'Alkali', definition: 'pH more than 7', subject: 'Chemistry', difficulty: 'ks3' },
+
+  // KS3 Physics - Basic concepts
+  { term: 'Force', definition: 'Push or pull', subject: 'Physics', difficulty: 'ks3' },
+  { term: 'Energy', definition: 'Ability to do work', subject: 'Physics', difficulty: 'ks3' },
+  { term: 'Speed', definition: 'Distance over time', subject: 'Physics', difficulty: 'ks3' },
+  { term: 'Current', definition: 'Flow of charge', subject: 'Physics', difficulty: 'ks3' },
+  { term: 'Voltage', definition: 'Electrical push', subject: 'Physics', difficulty: 'ks3' },
+  { term: 'Frequency', definition: 'Waves per second', subject: 'Physics', difficulty: 'ks3' },
+
+  // GCSE Biology - Intermediate
+  { term: 'Mitosis', definition: 'Cell division for growth', subject: 'Biology', difficulty: 'gcse' },
+  { term: 'Meiosis', definition: 'Cell division for gametes', subject: 'Biology', difficulty: 'gcse' },
+  { term: 'Enzyme', definition: 'Biological catalyst', subject: 'Biology', difficulty: 'gcse' },
+  { term: 'Chloroplast', definition: 'Site of photosynthesis', subject: 'Biology', difficulty: 'gcse' },
+  { term: 'Mitochondria', definition: 'Releases energy (ATP)', subject: 'Biology', difficulty: 'gcse' },
+  { term: 'Osmosis', definition: 'Water through membrane', subject: 'Biology', difficulty: 'gcse' },
+  { term: 'Stomata', definition: 'Leaf pores for gas exchange', subject: 'Biology', difficulty: 'gcse' },
+  { term: 'Allele', definition: 'Version of a gene', subject: 'Biology', difficulty: 'gcse' },
+
+  // GCSE Chemistry - Intermediate
+  { term: 'Covalent bond', definition: 'Shared electrons', subject: 'Chemistry', difficulty: 'gcse' },
+  { term: 'Ionic bond', definition: 'Electron transfer', subject: 'Chemistry', difficulty: 'gcse' },
+  { term: 'Catalyst', definition: 'Speeds up reaction', subject: 'Chemistry', difficulty: 'gcse' },
+  { term: 'Electrolysis', definition: 'Splits using electricity', subject: 'Chemistry', difficulty: 'gcse' },
+  { term: 'Oxidation', definition: 'Loss of electrons', subject: 'Chemistry', difficulty: 'gcse' },
+  { term: 'Reduction', definition: 'Gain of electrons', subject: 'Chemistry', difficulty: 'gcse' },
+  { term: 'Isotope', definition: 'Same protons, diff neutrons', subject: 'Chemistry', difficulty: 'gcse' },
+  { term: 'Endothermic', definition: 'Absorbs heat energy', subject: 'Chemistry', difficulty: 'gcse' },
+
+  // GCSE Physics - Intermediate
+  { term: 'Velocity', definition: 'Speed + direction', subject: 'Physics', difficulty: 'gcse' },
+  { term: 'Acceleration', definition: 'Change in velocity', subject: 'Physics', difficulty: 'gcse' },
+  { term: 'Momentum', definition: 'Mass times velocity', subject: 'Physics', difficulty: 'gcse' },
+  { term: 'Wavelength', definition: 'Distance between peaks', subject: 'Physics', difficulty: 'gcse' },
+  { term: 'Resistance', definition: 'Opposes current', subject: 'Physics', difficulty: 'gcse' },
+  { term: 'Power', definition: 'Energy per second', subject: 'Physics', difficulty: 'gcse' },
+  { term: 'Half-life', definition: 'Time for half to decay', subject: 'Physics', difficulty: 'gcse' },
+  { term: 'Refraction', definition: 'Light bending at boundary', subject: 'Physics', difficulty: 'gcse' },
+
+  // A-Level Biology - Advanced
+  { term: 'Glycolysis', definition: 'Glucose to pyruvate', subject: 'Biology', difficulty: 'alevel' },
+  { term: 'Krebs cycle', definition: 'Acetyl-CoA oxidation', subject: 'Biology', difficulty: 'alevel' },
+  { term: 'Transcription', definition: 'DNA to mRNA', subject: 'Biology', difficulty: 'alevel' },
+  { term: 'Translation', definition: 'mRNA to protein', subject: 'Biology', difficulty: 'alevel' },
+  { term: 'Chemiosmosis', definition: 'ATP via H+ gradient', subject: 'Biology', difficulty: 'alevel' },
+  { term: 'Synapse', definition: 'Neuron junction', subject: 'Biology', difficulty: 'alevel' },
+  { term: 'Epistasis', definition: 'Gene masking gene', subject: 'Biology', difficulty: 'alevel' },
+  { term: 'Codominance', definition: 'Both alleles expressed', subject: 'Biology', difficulty: 'alevel' },
+
+  // A-Level Chemistry - Advanced
+  { term: 'Enthalpy', definition: 'Heat at constant pressure', subject: 'Chemistry', difficulty: 'alevel' },
+  { term: 'Entropy', definition: 'Measure of disorder', subject: 'Chemistry', difficulty: 'alevel' },
+  { term: 'Nucleophile', definition: 'Electron pair donor', subject: 'Chemistry', difficulty: 'alevel' },
+  { term: 'Electrophile', definition: 'Electron pair acceptor', subject: 'Chemistry', difficulty: 'alevel' },
+  { term: 'Kc', definition: 'Equilibrium constant', subject: 'Chemistry', difficulty: 'alevel' },
+  { term: 'Buffer', definition: 'Resists pH change', subject: 'Chemistry', difficulty: 'alevel' },
+  { term: 'Ligand', definition: 'Ion/molecule donor', subject: 'Chemistry', difficulty: 'alevel' },
+  { term: 'Chirality', definition: 'Non-superimposable mirror', subject: 'Chemistry', difficulty: 'alevel' },
+
+  // A-Level Physics - Advanced
+  { term: 'Capacitance', definition: 'Charge per volt', subject: 'Physics', difficulty: 'alevel' },
+  { term: 'Inductance', definition: 'Opposes current change', subject: 'Physics', difficulty: 'alevel' },
+  { term: 'Doppler effect', definition: 'Frequency shift motion', subject: 'Physics', difficulty: 'alevel' },
+  { term: 'Photoelectric', definition: 'Light ejects electrons', subject: 'Physics', difficulty: 'alevel' },
+  { term: 'de Broglie', definition: 'Matter has wavelength', subject: 'Physics', difficulty: 'alevel' },
+  { term: 'SHM', definition: 'Restoring force prop. to x', subject: 'Physics', difficulty: 'alevel' },
+  { term: 'Binding energy', definition: 'Energy to split nucleus', subject: 'Physics', difficulty: 'alevel' },
+  { term: 'Gravitational field', definition: 'Force per unit mass', subject: 'Physics', difficulty: 'alevel' },
 ];
 
 function shuffleArray<T>(array: T[]): T[] {
@@ -96,6 +168,7 @@ function createCards(gamePairs: Pair[]): Card[] {
 export default function MemoryMatchPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
 
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [cards, setCards] = useState<Card[]>([]);
@@ -106,10 +179,25 @@ export default function MemoryMatchPage() {
   const [timer, setTimer] = useState(0);
   const [isChecking, setIsChecking] = useState(false);
 
+  // Get year group from profile, default to 10 (GCSE) if not set
+  const yearGroup = profile?.yearGroup ?? 10;
+
+  // Determine difficulty based on year group
+  const { level: difficultyLevel, filter: difficultyFilter } = useMemo(
+    () => getDifficultyFromYearGroup(yearGroup),
+    [yearGroup]
+  );
+
+  // Filter pairs based on difficulty
+  const availablePairs = useMemo(
+    () => allPairs.filter(pair => difficultyFilter.includes(pair.difficulty)),
+    [difficultyFilter]
+  );
+
   const totalPairs = 6; // 12 cards total
 
   const startGame = () => {
-    const gamePairs = shuffleArray(pairs).slice(0, totalPairs);
+    const gamePairs = shuffleArray(availablePairs).slice(0, totalPairs);
     setCards(createCards(gamePairs));
     setFlippedCards([]);
     setMoves(0);
@@ -213,9 +301,19 @@ export default function MemoryMatchPage() {
           <h1 className="text-3xl font-bold text-text-primary mb-2">
             Memory Match
           </h1>
-          <p className="text-text-secondary mb-8">
+          <p className="text-text-secondary mb-4">
             Match scientific terms with their definitions!
           </p>
+
+          <div className={`inline-block px-4 py-2 rounded-full text-sm font-semibold mb-6 ${
+            difficultyLevel === 'KS3'
+              ? 'bg-pastel-green text-green-600'
+              : difficultyLevel === 'GCSE'
+              ? 'bg-pastel-blue text-blue-600'
+              : 'bg-pastel-purple text-purple-600'
+          }`}>
+            {difficultyLevel} Difficulty
+          </div>
 
           <div className="grid grid-cols-2 gap-4 mb-8">
             <div className="card p-4 text-center">

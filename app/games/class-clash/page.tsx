@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -58,9 +59,35 @@ const MOCK_LEADERBOARD: ClassScore[] = [
   { name: '11A', score: 8900, members: 24, color: 'from-slate-500 to-slate-600' },
 ];
 
+// Helper function to determine difficulty level based on year group
+function getDifficultyLevel(yearGroup: YearGroup | undefined): { label: string; level: 'KS3' | 'GCSE' | 'A-Level' } {
+  if (!yearGroup) {
+    return { label: 'GCSE Level', level: 'GCSE' };
+  }
+  if (yearGroup <= 6) {
+    // Primary years 1-6 default to KS3 difficulty (easiest available)
+    return { label: 'KS3 Level', level: 'KS3' };
+  }
+  if (yearGroup <= 9) {
+    // Years 7-9 are KS3
+    return { label: 'KS3 Level', level: 'KS3' };
+  }
+  if (yearGroup <= 11) {
+    // Years 10-11 are GCSE
+    return { label: 'GCSE Level', level: 'GCSE' };
+  }
+  // Years 12-13 are A-Level
+  return { label: 'A-Level', level: 'A-Level' };
+}
+
 export default function ClassClashPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
+
+  // Get year group from user profile and determine difficulty
+  const yearGroup = profile?.yearGroup;
+  const difficultyInfo = getDifficultyLevel(yearGroup);
 
   const [gameState, setGameState] = useState<'menu' | 'select-class' | 'playing' | 'results' | 'leaderboard'>('menu');
   const [selectedClass, setSelectedClass] = useState<string>('');
@@ -153,7 +180,20 @@ export default function ClassClashPage() {
           </motion.div>
 
           <h1 className="text-4xl font-black text-white mb-2">CLASS CLASH</h1>
-          <p className="text-white/60 mb-8">Compete for your class!</p>
+          <p className="text-white/60 mb-2">Compete for your class!</p>
+
+          <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full">
+            <span className={`text-sm font-semibold ${
+              difficultyInfo.level === 'KS3' ? 'text-green-400' :
+              difficultyInfo.level === 'GCSE' ? 'text-yellow-400' :
+              'text-red-400'
+            }`}>
+              {difficultyInfo.label}
+            </span>
+            {yearGroup && (
+              <span className="text-white/40 text-sm">| Year {yearGroup}</span>
+            )}
+          </div>
 
           <div className="space-y-4">
             <motion.button

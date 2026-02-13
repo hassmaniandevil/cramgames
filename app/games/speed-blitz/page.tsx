@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -28,29 +29,72 @@ interface Question {
   question: string;
   correctAnswer: string;
   wrongAnswers: string[];
+  difficulty: 'KS3' | 'GCSE' | 'A-Level';
 }
 
 const QUESTIONS: Question[] = [
-  { question: 'Chemical symbol for Gold?', correctAnswer: 'Au', wrongAnswers: ['Ag', 'Go', 'Gd'] },
-  { question: 'Powerhouse of the cell?', correctAnswer: 'Mitochondria', wrongAnswers: ['Nucleus', 'Ribosome', 'Chloroplast'] },
-  { question: '8 × 7 = ?', correctAnswer: '56', wrongAnswers: ['54', '48', '63'] },
-  { question: 'Unit of electrical resistance?', correctAnswer: 'Ohm', wrongAnswers: ['Volt', 'Amp', 'Watt'] },
-  { question: 'What gas do we breathe out?', correctAnswer: 'CO₂', wrongAnswers: ['O₂', 'N₂', 'H₂'] },
-  { question: 'Solve: 5x = 35', correctAnswer: 'x = 7', wrongAnswers: ['x = 5', 'x = 8', 'x = 6'] },
-  { question: 'Atomic number of Oxygen?', correctAnswer: '8', wrongAnswers: ['6', '16', '12'] },
-  { question: 'What process releases energy from glucose?', correctAnswer: 'Respiration', wrongAnswers: ['Photosynthesis', 'Digestion', 'Osmosis'] },
-  { question: 'Speed = Distance ÷ ?', correctAnswer: 'Time', wrongAnswers: ['Mass', 'Force', 'Velocity'] },
-  { question: 'What type of bond shares electrons?', correctAnswer: 'Covalent', wrongAnswers: ['Ionic', 'Metallic', 'Hydrogen'] },
-  { question: '√225 = ?', correctAnswer: '15', wrongAnswers: ['14', '16', '13'] },
-  { question: 'Where is DNA found?', correctAnswer: 'Nucleus', wrongAnswers: ['Cytoplasm', 'Ribosome', 'Cell membrane'] },
-  { question: 'F = m × ?', correctAnswer: 'a', wrongAnswers: ['v', 'g', 's'] },
-  { question: 'What is H₂SO₄?', correctAnswer: 'Sulphuric acid', wrongAnswers: ['Hydrochloric acid', 'Nitric acid', 'Carbonic acid'] },
-  { question: 'Angles in a triangle sum to?', correctAnswer: '180°', wrongAnswers: ['360°', '90°', '270°'] },
+  // KS3 Questions
+  { question: '8 × 7 = ?', correctAnswer: '56', wrongAnswers: ['54', '48', '63'], difficulty: 'KS3' },
+  { question: 'What gas do we breathe out?', correctAnswer: 'CO₂', wrongAnswers: ['O₂', 'N₂', 'H₂'], difficulty: 'KS3' },
+  { question: 'Angles in a triangle sum to?', correctAnswer: '180°', wrongAnswers: ['360°', '90°', '270°'], difficulty: 'KS3' },
+  { question: 'What is the largest planet?', correctAnswer: 'Jupiter', wrongAnswers: ['Saturn', 'Neptune', 'Mars'], difficulty: 'KS3' },
+  { question: '12 × 12 = ?', correctAnswer: '144', wrongAnswers: ['124', '132', '156'], difficulty: 'KS3' },
+  { question: 'How many sides does a hexagon have?', correctAnswer: '6', wrongAnswers: ['5', '7', '8'], difficulty: 'KS3' },
+  { question: 'What is 50% of 80?', correctAnswer: '40', wrongAnswers: ['30', '50', '45'], difficulty: 'KS3' },
+  { question: 'Which organ pumps blood?', correctAnswer: 'Heart', wrongAnswers: ['Lungs', 'Liver', 'Brain'], difficulty: 'KS3' },
+
+  // GCSE Questions
+  { question: 'Chemical symbol for Gold?', correctAnswer: 'Au', wrongAnswers: ['Ag', 'Go', 'Gd'], difficulty: 'GCSE' },
+  { question: 'Powerhouse of the cell?', correctAnswer: 'Mitochondria', wrongAnswers: ['Nucleus', 'Ribosome', 'Chloroplast'], difficulty: 'GCSE' },
+  { question: 'Unit of electrical resistance?', correctAnswer: 'Ohm', wrongAnswers: ['Volt', 'Amp', 'Watt'], difficulty: 'GCSE' },
+  { question: 'Solve: 5x = 35', correctAnswer: 'x = 7', wrongAnswers: ['x = 5', 'x = 8', 'x = 6'], difficulty: 'GCSE' },
+  { question: 'Atomic number of Oxygen?', correctAnswer: '8', wrongAnswers: ['6', '16', '12'], difficulty: 'GCSE' },
+  { question: 'What process releases energy from glucose?', correctAnswer: 'Respiration', wrongAnswers: ['Photosynthesis', 'Digestion', 'Osmosis'], difficulty: 'GCSE' },
+  { question: 'Speed = Distance ÷ ?', correctAnswer: 'Time', wrongAnswers: ['Mass', 'Force', 'Velocity'], difficulty: 'GCSE' },
+  { question: 'What type of bond shares electrons?', correctAnswer: 'Covalent', wrongAnswers: ['Ionic', 'Metallic', 'Hydrogen'], difficulty: 'GCSE' },
+  { question: '√225 = ?', correctAnswer: '15', wrongAnswers: ['14', '16', '13'], difficulty: 'GCSE' },
+  { question: 'Where is DNA found?', correctAnswer: 'Nucleus', wrongAnswers: ['Cytoplasm', 'Ribosome', 'Cell membrane'], difficulty: 'GCSE' },
+  { question: 'F = m × ?', correctAnswer: 'a', wrongAnswers: ['v', 'g', 's'], difficulty: 'GCSE' },
+  { question: 'What is H₂SO₄?', correctAnswer: 'Sulphuric acid', wrongAnswers: ['Hydrochloric acid', 'Nitric acid', 'Carbonic acid'], difficulty: 'GCSE' },
+
+  // A-Level Questions
+  { question: 'Derivative of sin(x)?', correctAnswer: 'cos(x)', wrongAnswers: ['-cos(x)', 'tan(x)', '-sin(x)'], difficulty: 'A-Level' },
+  { question: 'What is Avogadro\'s number?', correctAnswer: '6.02 × 10²³', wrongAnswers: ['3.14 × 10²³', '9.81 × 10²³', '1.38 × 10²³'], difficulty: 'A-Level' },
+  { question: 'What is the integral of 1/x?', correctAnswer: 'ln|x| + C', wrongAnswers: ['x⁻¹ + C', 'eˣ + C', '1/x² + C'], difficulty: 'A-Level' },
+  { question: 'Which particle has no charge?', correctAnswer: 'Neutron', wrongAnswers: ['Proton', 'Electron', 'Positron'], difficulty: 'A-Level' },
+  { question: 'What is the units of Planck\'s constant?', correctAnswer: 'J·s', wrongAnswers: ['J/s', 'N·m', 'W·s'], difficulty: 'A-Level' },
+  { question: 'What is ATP used for?', correctAnswer: 'Energy transfer', wrongAnswers: ['Protein synthesis', 'Cell division', 'DNA replication'], difficulty: 'A-Level' },
+  { question: 'E = mc² - what is c?', correctAnswer: 'Speed of light', wrongAnswers: ['Coulomb constant', 'Specific heat', 'Concentration'], difficulty: 'A-Level' },
+  { question: 'Oxidation state of Fe in Fe₂O₃?', correctAnswer: '+3', wrongAnswers: ['+2', '+6', '+1'], difficulty: 'A-Level' },
 ];
+
+// Map year group to starting difficulty
+function getStartingDifficulty(yearGroup: number): 'KS3' | 'GCSE' | 'A-Level' {
+  if (yearGroup <= 9) return 'KS3';
+  if (yearGroup <= 11) return 'GCSE';
+  return 'A-Level';
+}
+
+// Get questions filtered by difficulty (includes easier levels too)
+function getQuestionsForDifficulty(difficulty: 'KS3' | 'GCSE' | 'A-Level'): Question[] {
+  if (difficulty === 'KS3') {
+    return QUESTIONS.filter(q => q.difficulty === 'KS3');
+  }
+  if (difficulty === 'GCSE') {
+    return QUESTIONS.filter(q => q.difficulty === 'KS3' || q.difficulty === 'GCSE');
+  }
+  // A-Level gets all questions
+  return QUESTIONS;
+}
 
 export default function SpeedBlitzPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
+  const yearGroup = profile?.yearGroup || 10;
+  const difficulty = getStartingDifficulty(yearGroup);
+  const filteredQuestions = getQuestionsForDifficulty(difficulty);
+
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
 
@@ -84,11 +128,11 @@ export default function SpeedBlitzPage() {
   }, [currentQuestion]);
 
   const nextQuestion = useCallback(() => {
-    const nextIdx = questionIndex % QUESTIONS.length;
-    setCurrentQuestion(QUESTIONS[nextIdx]);
+    const nextIdx = questionIndex % filteredQuestions.length;
+    setCurrentQuestion(filteredQuestions[nextIdx]);
     setQuestionIndex(i => i + 1);
     setTimeout(() => spawnAnswers(), 100);
-  }, [questionIndex, spawnAnswers]);
+  }, [questionIndex, spawnAnswers, filteredQuestions]);
 
   const startGame = () => {
     setGameState('playing');
@@ -99,7 +143,7 @@ export default function SpeedBlitzPage() {
     setGameSpeed(1);
     setFallingAnswers([]);
     setTimeout(() => {
-      const question = QUESTIONS[0];
+      const question = filteredQuestions[0];
       setCurrentQuestion(question);
       setQuestionIndex(1);
     }, 500);
@@ -222,8 +266,11 @@ export default function SpeedBlitzPage() {
           <h1 className="text-4xl font-black text-white mb-2 drop-shadow-lg">
             SPEED BLITZ
           </h1>
-          <p className="text-white/80 mb-8 text-lg">
+          <p className="text-white/80 mb-2 text-lg">
             Tap falling answers before they escape!
+          </p>
+          <p className="text-cyan-300 font-medium mb-8">
+            Difficulty: {difficulty} (Year {yearGroup})
           </p>
 
           <div className="flex justify-center gap-4 mb-8">

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -27,6 +28,43 @@ interface Question {
   question: string;
   correctAnswer: string;
   wrongAnswers: string[];
+}
+
+// Get difficulty level and settings based on year group
+function getDifficultySettings(yearGroup: YearGroup | undefined): {
+  level: 'KS3' | 'GCSE' | 'A-Level';
+  baseSpawnInterval: number;
+  minSpawnInterval: number;
+  speedDecrement: number;
+} {
+  // Default to GCSE if no year group
+  const year = yearGroup ?? 10;
+
+  if (year <= 9) {
+    // KS3 (Years 7-9): Easier/slower timing
+    return {
+      level: 'KS3',
+      baseSpawnInterval: 2500,
+      minSpawnInterval: 1500,
+      speedDecrement: 80,
+    };
+  } else if (year <= 11) {
+    // GCSE (Years 10-11): Medium difficulty
+    return {
+      level: 'GCSE',
+      baseSpawnInterval: 2000,
+      minSpawnInterval: 1000,
+      speedDecrement: 100,
+    };
+  } else {
+    // A-Level (Years 12-13): Harder/faster timing
+    return {
+      level: 'A-Level',
+      baseSpawnInterval: 1500,
+      minSpawnInterval: 700,
+      speedDecrement: 120,
+    };
+  }
 }
 
 const questions: Question[] = [
@@ -54,7 +92,12 @@ const questions: Question[] = [
 export default function ReactionRacePage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
   const gameAreaRef = useRef<HTMLDivElement>(null);
+
+  // Get difficulty settings based on user's year group
+  const yearGroup = profile?.yearGroup;
+  const difficultySettings = getDifficultySettings(yearGroup);
 
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [score, setScore] = useState(0);
@@ -65,7 +108,7 @@ export default function ReactionRacePage() {
   const [hits, setHits] = useState(0);
   const [misses, setMisses] = useState(0);
   const [showFeedback, setShowFeedback] = useState<{ correct: boolean; x: number; y: number } | null>(null);
-  const [spawnInterval, setSpawnInterval] = useState(2000);
+  const [spawnInterval, setSpawnInterval] = useState(difficultySettings.baseSpawnInterval);
 
   const generateTargets = useCallback((question: Question) => {
     if (!gameAreaRef.current) return;
@@ -101,13 +144,16 @@ export default function ReactionRacePage() {
     setCurrentQuestion(question);
     setRound(r => r + 1);
 
-    // Speed up as game progresses
-    setSpawnInterval(Math.max(1000, 2000 - round * 100));
+    // Speed up as game progresses, using difficulty-based settings
+    setSpawnInterval(Math.max(
+      difficultySettings.minSpawnInterval,
+      difficultySettings.baseSpawnInterval - round * difficultySettings.speedDecrement
+    ));
 
     setTimeout(() => {
       generateTargets(question);
     }, 500);
-  }, [round, generateTargets]);
+  }, [round, generateTargets, difficultySettings]);
 
   const startGame = () => {
     setGameState('playing');
@@ -117,7 +163,7 @@ export default function ReactionRacePage() {
     setHits(0);
     setMisses(0);
     setTargets([]);
-    setSpawnInterval(2000);
+    setSpawnInterval(difficultySettings.baseSpawnInterval);
     setTimeout(() => nextRound(), 100);
   };
 
@@ -198,9 +244,16 @@ export default function ReactionRacePage() {
           <h1 className="text-4xl font-black text-white mb-2 drop-shadow-lg">
             REACTION RACE
           </h1>
-          <p className="text-white/80 mb-8 text-lg">
+          <p className="text-white/80 mb-4 text-lg">
             Tap the correct answer before time runs out!
           </p>
+
+          <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur rounded-xl">
+            <Timer size={18} className="text-purple-300" />
+            <span className="text-white/90 font-semibold">
+              Difficulty: <span className="text-purple-300">{difficultySettings.level}</span>
+            </span>
+          </div>
 
           <div className="flex justify-center gap-4 mb-8">
             {[1, 2, 3].map((i) => (

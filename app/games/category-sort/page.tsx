@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { useState, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -15,6 +16,22 @@ import {
   XCircle,
   ArrowRight,
 } from 'lucide-react';
+
+type DifficultyLevel = 'KS3' | 'GCSE' | 'A-Level';
+
+// Helper to get difficulty level from year group
+function getDifficultyFromYearGroup(yearGroup: number): { level: DifficultyLevel; filter: ('ks3' | 'gcse' | 'alevel')[] } {
+  if (yearGroup <= 9) {
+    // Years 7-9: KS3
+    return { level: 'KS3', filter: ['ks3'] };
+  } else if (yearGroup <= 11) {
+    // Years 10-11: GCSE
+    return { level: 'GCSE', filter: ['ks3', 'gcse'] };
+  } else {
+    // Years 12-13: A-Level
+    return { level: 'A-Level', filter: ['ks3', 'gcse', 'alevel'] };
+  }
+}
 
 interface SortItem {
   id: string;
@@ -28,14 +45,17 @@ interface Challenge {
   subject: string;
   categories: string[];
   items: SortItem[];
+  difficulty: 'ks3' | 'gcse' | 'alevel';
 }
 
-const challenges: Challenge[] = [
+const allChallenges: Challenge[] = [
+  // KS3 Challenges
   {
-    id: 'bio-1',
+    id: 'bio-ks3-1',
     title: 'Plant vs Animal Cells',
     subject: 'Biology',
     categories: ['Plant Cells Only', 'Animal Cells Only', 'Both'],
+    difficulty: 'ks3',
     items: [
       { id: '1', text: 'Cell wall', category: 'Plant Cells Only' },
       { id: '2', text: 'Chloroplasts', category: 'Plant Cells Only' },
@@ -48,10 +68,11 @@ const challenges: Challenge[] = [
     ],
   },
   {
-    id: 'chem-1',
+    id: 'chem-ks3-1',
     title: 'Acids vs Alkalis',
     subject: 'Chemistry',
     categories: ['Acids', 'Alkalis', 'Neutral'],
+    difficulty: 'ks3',
     items: [
       { id: '1', text: 'Lemon juice', category: 'Acids' },
       { id: '2', text: 'Vinegar', category: 'Acids' },
@@ -64,10 +85,11 @@ const challenges: Challenge[] = [
     ],
   },
   {
-    id: 'phys-1',
+    id: 'phys-ks3-1',
     title: 'Types of Energy',
     subject: 'Physics',
     categories: ['Kinetic', 'Potential', 'Other'],
+    difficulty: 'ks3',
     items: [
       { id: '1', text: 'Moving car', category: 'Kinetic' },
       { id: '2', text: 'Flowing water', category: 'Kinetic' },
@@ -80,10 +102,30 @@ const challenges: Challenge[] = [
     ],
   },
   {
-    id: 'bio-2',
+    id: 'bio-ks3-2',
+    title: 'Vertebrates vs Invertebrates',
+    subject: 'Biology',
+    categories: ['Vertebrates', 'Invertebrates'],
+    difficulty: 'ks3',
+    items: [
+      { id: '1', text: 'Dog', category: 'Vertebrates' },
+      { id: '2', text: 'Fish', category: 'Vertebrates' },
+      { id: '3', text: 'Snake', category: 'Vertebrates' },
+      { id: '4', text: 'Frog', category: 'Vertebrates' },
+      { id: '5', text: 'Spider', category: 'Invertebrates' },
+      { id: '6', text: 'Worm', category: 'Invertebrates' },
+      { id: '7', text: 'Jellyfish', category: 'Invertebrates' },
+      { id: '8', text: 'Snail', category: 'Invertebrates' },
+    ],
+  },
+
+  // GCSE Challenges
+  {
+    id: 'bio-gcse-1',
     title: 'Respiration Products',
     subject: 'Biology',
     categories: ['Aerobic Only', 'Anaerobic Only', 'Both'],
+    difficulty: 'gcse',
     items: [
       { id: '1', text: 'Carbon dioxide', category: 'Aerobic Only' },
       { id: '2', text: 'Water', category: 'Aerobic Only' },
@@ -96,10 +138,11 @@ const challenges: Challenge[] = [
     ],
   },
   {
-    id: 'chem-2',
+    id: 'chem-gcse-1',
     title: 'Types of Bonding',
     subject: 'Chemistry',
     categories: ['Ionic', 'Covalent', 'Metallic'],
+    difficulty: 'gcse',
     items: [
       { id: '1', text: 'NaCl (salt)', category: 'Ionic' },
       { id: '2', text: 'MgO', category: 'Ionic' },
@@ -112,10 +155,11 @@ const challenges: Challenge[] = [
     ],
   },
   {
-    id: 'phys-2',
+    id: 'phys-gcse-1',
     title: 'EM Spectrum Uses',
     subject: 'Physics',
     categories: ['Radio', 'Visible', 'X-rays'],
+    difficulty: 'gcse',
     items: [
       { id: '1', text: 'TV signals', category: 'Radio' },
       { id: '2', text: 'WiFi', category: 'Radio' },
@@ -125,6 +169,93 @@ const challenges: Challenge[] = [
       { id: '6', text: 'Medical imaging', category: 'X-rays' },
       { id: '7', text: 'Airport security', category: 'X-rays' },
       { id: '8', text: 'Cancer treatment', category: 'X-rays' },
+    ],
+  },
+  {
+    id: 'bio-gcse-2',
+    title: 'Inherited vs Environmental',
+    subject: 'Biology',
+    categories: ['Inherited', 'Environmental', 'Both'],
+    difficulty: 'gcse',
+    items: [
+      { id: '1', text: 'Eye colour', category: 'Inherited' },
+      { id: '2', text: 'Blood type', category: 'Inherited' },
+      { id: '3', text: 'Scars', category: 'Environmental' },
+      { id: '4', text: 'Language spoken', category: 'Environmental' },
+      { id: '5', text: 'Height', category: 'Both' },
+      { id: '6', text: 'Weight', category: 'Both' },
+      { id: '7', text: 'Skin colour', category: 'Both' },
+      { id: '8', text: 'Intelligence', category: 'Both' },
+    ],
+  },
+
+  // A-Level Challenges
+  {
+    id: 'bio-alevel-1',
+    title: 'Photosynthesis Stages',
+    subject: 'Biology',
+    categories: ['Light-dependent', 'Light-independent', 'Both'],
+    difficulty: 'alevel',
+    items: [
+      { id: '1', text: 'Photolysis of water', category: 'Light-dependent' },
+      { id: '2', text: 'Electron transport chain', category: 'Light-dependent' },
+      { id: '3', text: 'ATP production via chemiosmosis', category: 'Light-dependent' },
+      { id: '4', text: 'Carbon fixation', category: 'Light-independent' },
+      { id: '5', text: 'RuBisCO enzyme', category: 'Light-independent' },
+      { id: '6', text: 'Regeneration of RuBP', category: 'Light-independent' },
+      { id: '7', text: 'Uses ATP', category: 'Both' },
+      { id: '8', text: 'Occurs in chloroplast', category: 'Both' },
+    ],
+  },
+  {
+    id: 'chem-alevel-1',
+    title: 'Reaction Mechanisms',
+    subject: 'Chemistry',
+    categories: ['Nucleophilic', 'Electrophilic', 'Radical'],
+    difficulty: 'alevel',
+    items: [
+      { id: '1', text: 'Hydrolysis of haloalkanes', category: 'Nucleophilic' },
+      { id: '2', text: 'OH⁻ attacks C+', category: 'Nucleophilic' },
+      { id: '3', text: 'Addition to alkenes', category: 'Electrophilic' },
+      { id: '4', text: 'Benzene nitration', category: 'Electrophilic' },
+      { id: '5', text: 'Bromination of alkanes', category: 'Radical' },
+      { id: '6', text: 'UV light initiation', category: 'Radical' },
+      { id: '7', text: 'Chain propagation', category: 'Radical' },
+      { id: '8', text: 'Homolytic fission', category: 'Radical' },
+    ],
+  },
+  {
+    id: 'phys-alevel-1',
+    title: 'Particle Properties',
+    subject: 'Physics',
+    categories: ['Bosons', 'Fermions', 'Both'],
+    difficulty: 'alevel',
+    items: [
+      { id: '1', text: 'Photon', category: 'Bosons' },
+      { id: '2', text: 'Gluon', category: 'Bosons' },
+      { id: '3', text: 'W and Z bosons', category: 'Bosons' },
+      { id: '4', text: 'Electron', category: 'Fermions' },
+      { id: '5', text: 'Quark', category: 'Fermions' },
+      { id: '6', text: 'Neutrino', category: 'Fermions' },
+      { id: '7', text: 'Has mass', category: 'Both' },
+      { id: '8', text: 'Follows quantum mechanics', category: 'Both' },
+    ],
+  },
+  {
+    id: 'chem-alevel-2',
+    title: 'Electrode Processes',
+    subject: 'Chemistry',
+    categories: ['Anode', 'Cathode', 'Both'],
+    difficulty: 'alevel',
+    items: [
+      { id: '1', text: 'Oxidation occurs', category: 'Anode' },
+      { id: '2', text: 'Electrons released', category: 'Anode' },
+      { id: '3', text: 'Positive electrode', category: 'Anode' },
+      { id: '4', text: 'Reduction occurs', category: 'Cathode' },
+      { id: '5', text: 'Electrons gained', category: 'Cathode' },
+      { id: '6', text: 'Negative electrode', category: 'Cathode' },
+      { id: '7', text: 'Made of metal/carbon', category: 'Both' },
+      { id: '8', text: 'Conducts electricity', category: 'Both' },
     ],
   },
 ];
@@ -141,7 +272,9 @@ function shuffleArray<T>(array: T[]): T[] {
 export default function CategorySortPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
 
+  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [challengeIndex, setChallengeIndex] = useState(0);
   const [unsortedItems, setUnsortedItems] = useState<SortItem[]>([]);
   const [sortedItems, setSortedItems] = useState<Record<string, SortItem[]>>({});
@@ -149,13 +282,36 @@ export default function CategorySortPage() {
   const [showResult, setShowResult] = useState(false);
   const [score, setScore] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
-  const [gameComplete, setGameComplete] = useState(false);
+  const [gameChallenges, setGameChallenges] = useState<Challenge[]>([]);
 
-  const challenge = challenges[challengeIndex];
+  // Get year group from profile, default to 10 (GCSE) if not set
+  const yearGroup = profile?.yearGroup ?? 10;
+
+  // Determine difficulty based on year group
+  const { level: difficultyLevel, filter: difficultyFilter } = useMemo(
+    () => getDifficultyFromYearGroup(yearGroup),
+    [yearGroup]
+  );
+
+  // Filter challenges based on difficulty
+  const availableChallenges = useMemo(
+    () => allChallenges.filter(c => difficultyFilter.includes(c.difficulty)),
+    [difficultyFilter]
+  );
+
   const totalChallenges = 4;
+  const challenge = gameChallenges[challengeIndex];
+
+  const startGame = () => {
+    const shuffled = shuffleArray(availableChallenges).slice(0, totalChallenges);
+    setGameChallenges(shuffled);
+    setChallengeIndex(0);
+    setScore(0);
+    setGameState('playing');
+  };
 
   useEffect(() => {
-    if (challenge) {
+    if (challenge && gameState === 'playing') {
       setUnsortedItems(shuffleArray(challenge.items));
       const initial: Record<string, SortItem[]> = {};
       challenge.categories.forEach(cat => {
@@ -165,7 +321,7 @@ export default function CategorySortPage() {
       setSelectedItem(null);
       setShowResult(false);
     }
-  }, [challengeIndex]);
+  }, [challengeIndex, challenge, gameState]);
 
   const handleItemClick = (item: SortItem) => {
     if (showResult) return;
@@ -215,20 +371,77 @@ export default function CategorySortPage() {
     if (challengeIndex < totalChallenges - 1) {
       setChallengeIndex(prev => prev + 1);
     } else {
-      setGameComplete(true);
+      setGameState('finished');
     }
   };
 
   const resetGame = () => {
-    setChallengeIndex(0);
-    setScore(0);
-    setGameComplete(false);
+    setGameState('ready');
   };
 
   const allSorted = unsortedItems.length === 0;
 
+  // Ready screen
+  if (gameState === 'ready') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-teal-900 via-cyan-900 to-blue-900 flex flex-col items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center max-w-sm"
+        >
+          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-teal-500/30 flex items-center justify-center">
+            <Layers size={48} className="text-teal-400" />
+          </div>
+
+          <h1 className="text-3xl font-bold text-white mb-2">
+            Category Sort
+          </h1>
+          <p className="text-white/70 mb-4">
+            Sort items into the correct categories!
+          </p>
+
+          <div className={`inline-block px-4 py-2 rounded-full text-sm font-semibold mb-6 ${
+            difficultyLevel === 'KS3'
+              ? 'bg-green-500/30 text-green-400'
+              : difficultyLevel === 'GCSE'
+              ? 'bg-blue-500/30 text-blue-400'
+              : 'bg-purple-500/30 text-purple-400'
+          }`}>
+            {difficultyLevel} Difficulty
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-center border border-white/20">
+              <div className="text-2xl font-bold text-teal-400">{totalChallenges}</div>
+              <p className="text-sm text-white/60">Challenges</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-center border border-white/20">
+              <div className="text-2xl font-bold text-cyan-400">8</div>
+              <p className="text-sm text-white/60">Items Each</p>
+            </div>
+          </div>
+
+          <button
+            onClick={startGame}
+            className="w-full py-4 font-bold text-white bg-gradient-to-r from-teal-400 to-cyan-500 rounded-xl text-lg"
+          >
+            Start Game
+          </button>
+
+          <button
+            onClick={() => router.push('/')}
+            className="mt-4 text-white/60 hover:text-white transition-colors"
+          >
+            Back to Home
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
   // Complete screen
-  if (gameComplete) {
+  if (gameState === 'finished') {
     return (
       <div className="min-h-screen bg-gradient-to-b from-teal-900 via-cyan-900 to-blue-900 flex flex-col items-center justify-center p-6">
         <motion.div
@@ -274,6 +487,15 @@ export default function CategorySortPage() {
             </button>
           </div>
         </motion.div>
+      </div>
+    );
+  }
+
+  // Show loading if no challenge yet
+  if (!challenge) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-teal-900 via-cyan-900 to-blue-900 flex items-center justify-center">
+        <div className="text-white">Loading...</div>
       </div>
     );
   }

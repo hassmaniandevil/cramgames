@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -96,9 +97,25 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
+// Helper function to determine difficulty level based on year group
+function getDifficultyFromYearGroup(yearGroup: YearGroup): { level: 'KS3' | 'GCSE' | 'A-Level'; label: string; color: string } {
+  if (yearGroup <= 9) {
+    return { level: 'KS3', label: 'KS3 Level', color: 'bg-pastel-green text-correct' };
+  } else if (yearGroup <= 11) {
+    return { level: 'GCSE', label: 'GCSE Level', color: 'bg-pastel-purple text-accent' };
+  } else {
+    return { level: 'A-Level', label: 'A-Level', color: 'bg-pastel-pink text-incorrect' };
+  }
+}
+
 export default function DefinitionDashPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
+
+  // Get year group from user profile, default to 10 (GCSE) if not set
+  const yearGroup = profile?.yearGroup ?? 10;
+  const difficulty = getDifficultyFromYearGroup(yearGroup as YearGroup);
 
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
@@ -225,9 +242,16 @@ export default function DefinitionDashPage() {
           <h1 className="text-3xl font-bold text-text-primary mb-2">
             Definition Dash
           </h1>
-          <p className="text-text-secondary mb-8">
+          <p className="text-text-secondary mb-4">
             Match terms to their definitions as fast as you can!
           </p>
+
+          {/* Difficulty level badge */}
+          <div className="flex justify-center mb-6">
+            <span className={`px-4 py-2 rounded-full text-sm font-semibold ${difficulty.color}`}>
+              {difficulty.label}
+            </span>
+          </div>
 
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="card p-4 text-center">

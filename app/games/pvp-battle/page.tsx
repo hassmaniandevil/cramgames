@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -41,9 +42,28 @@ const QUESTIONS: Question[] = [
 
 const ROUND_TIME = 10; // seconds per question
 
+// Map year group to difficulty level
+function getDifficultyFromYearGroup(yearGroup: number): { level: string; label: string } {
+  if (yearGroup >= 1 && yearGroup <= 6) {
+    return { level: 'primary', label: 'Primary' };
+  } else if (yearGroup >= 7 && yearGroup <= 9) {
+    return { level: 'ks3', label: 'KS3' };
+  } else if (yearGroup >= 10 && yearGroup <= 11) {
+    return { level: 'gcse', label: 'GCSE' };
+  } else if (yearGroup >= 12 && yearGroup <= 13) {
+    return { level: 'alevel', label: 'A-Level' };
+  }
+  return { level: 'gcse', label: 'GCSE' }; // Default
+}
+
 export default function PvPBattlePage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
+
+  // Get year group and difficulty from user profile
+  const yearGroup = profile?.yearGroup ?? 10;
+  const difficulty = getDifficultyFromYearGroup(yearGroup);
 
   const [gameState, setGameState] = useState<'menu' | 'waiting' | 'playing' | 'results'>('menu');
   const [mode, setMode] = useState<'host' | 'join' | null>(null);
@@ -274,9 +294,14 @@ export default function PvPBattlePage() {
           <h2 className="text-2xl font-bold text-white mb-2">Waiting for opponent...</h2>
           <p className="text-white/60 mb-6">Share this code with your friend</p>
 
-          <div className="bg-white/10 rounded-2xl p-6 mb-6">
+          <div className="bg-white/10 rounded-2xl p-6 mb-4">
             <p className="text-white/60 text-sm mb-2">ROOM CODE</p>
             <p className="text-4xl font-mono font-black text-white tracking-widest">{roomCode}</p>
+          </div>
+
+          <div className="bg-gradient-to-r from-rose-500/20 to-orange-500/20 rounded-xl px-4 py-3 mb-6 border border-rose-500/30">
+            <p className="text-white/60 text-xs mb-1">DIFFICULTY LEVEL</p>
+            <p className="text-lg font-bold text-white">{difficulty.label} (Year {yearGroup})</p>
           </div>
 
           <div className="flex gap-3 justify-center">
