@@ -2,21 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import { motion, Reorder } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
-  X,
-  Zap,
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import {
   Clock,
-  Trophy,
-  RotateCcw,
-  Home,
   GripVertical,
   CheckCircle,
-  XCircle,
-  Play,
-  BookOpen,
 } from 'lucide-react';
 
 interface TimelineEvent {
@@ -157,42 +157,66 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
-// Get difficulty level label from year group
-function getDifficultyFromYearGroup(yearGroup: YearGroup): { level: string; label: string; color: string } {
-  if (yearGroup >= 7 && yearGroup <= 9) {
-    return { level: 'KS3', label: 'Key Stage 3', color: 'text-blue-400' };
-  } else if (yearGroup >= 10 && yearGroup <= 11) {
-    return { level: 'GCSE', label: 'GCSE Level', color: 'text-purple-400' };
-  } else if (yearGroup >= 12 && yearGroup <= 13) {
-    return { level: 'A-Level', label: 'A-Level', color: 'text-amber-400' };
-  }
-  // Default for primary years
-  return { level: 'Foundation', label: 'Foundation Level', color: 'text-green-400' };
-}
+const TOTAL_TIME = 120; // 2 minutes for all challenges
 
 export default function TimelineChallengePage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
-  const { profile } = useUserStore();
+  // Game framework hooks
+  const { gameState, isPlaying, startGame, finishGame, resetGame } = useGameState();
+  const { time, start: startTimer, reset: resetTimer } = useGameTimer({
+    initialTime: TOTAL_TIME,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+  const {
+    score,
+    combo,
+    maxCombo,
+    correctAnswers,
+    wrongAnswers,
+    accuracy,
+    xpEarned,
+    isPerfect,
+    recordCorrect,
+    recordWrong,
+    reset: resetScore,
+  } = useGameScore({ basePointsPerQuestion: 100 });
+  const { playCorrect, playWrong } = useGameAudio();
+  const { shake } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
 
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
+  // Game-specific state
   const [currentIndex, setCurrentIndex] = useState(0);
   const [orderedEvents, setOrderedEvents] = useState<TimelineEvent[]>([]);
   const [showResult, setShowResult] = useState(false);
-  const [score, setScore] = useState(0);
-  const [gameComplete, setGameComplete] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
 
-  const yearGroup = profile?.yearGroup || 10;
-  const difficulty = getDifficultyFromYearGroup(yearGroup);
   const challenge = challenges[currentIndex];
 
+  // Initialize events when challenge changes
   useEffect(() => {
-    if (challenge) {
+    if (challenge && isPlaying) {
       setOrderedEvents(shuffleArray(challenge.events));
     }
-  }, [currentIndex]);
+  }, [currentIndex, challenge, isPlaying]);
 
+  // Handle game start
+  const handleStart = () => {
+    startGame();
+    startTimer();
+    setOrderedEvents(shuffleArray(challenges[0].events));
+  };
+
+  // Handle game restart
+  const handleRestart = () => {
+    resetGame();
+    resetTimer();
+    resetScore();
+    setCurrentIndex(0);
+    setShowResult(false);
+    setCorrectCount(0);
+  };
+
+  // Check the order of events
   const checkOrder = () => {
     let correct = 0;
     orderedEvents.forEach((event, index) => {
@@ -201,314 +225,204 @@ export default function TimelineChallengePage() {
       }
     });
 
-    const accuracy = correct / challenge.events.length;
+    const totalEvents = challenge.events.length;
     setCorrectCount(correct);
 
-    if (accuracy === 1) {
-      setScore(s => s + 50);
-      addXP(50);
-    } else if (accuracy >= 0.7) {
-      const xp = Math.round(30 * accuracy);
-      setScore(s => s + xp);
-      addXP(xp);
+    if (correct === totalEvents) {
+      // Perfect order - full points
+      recordCorrect();
+      playCorrect(combo + 1);
+      emitCorrect();
+    } else if (correct >= totalEvents * 0.7) {
+      // Mostly correct - partial points
+      recordCorrect();
+      playCorrect(1);
+      emitCorrect();
+    } else {
+      // Too many wrong
+      recordWrong();
+      playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
     }
 
     setShowResult(true);
   };
 
+  // Move to next challenge or finish
   const nextChallenge = () => {
     if (currentIndex < challenges.length - 1) {
       setCurrentIndex(prev => prev + 1);
       setShowResult(false);
     } else {
-      setGameComplete(true);
+      finishGame();
     }
   };
 
-  const resetGame = () => {
-    setCurrentIndex(0);
-    setShowResult(false);
-    setScore(0);
-    setGameComplete(false);
-    setGameState('ready');
+  // Build stats for GameFrame
+  const stats = {
+    score,
+    correctAnswers,
+    wrongAnswers,
+    combo,
+    maxCombo,
+    accuracy,
+    xpEarned,
+    isPerfect,
   };
-
-  const startGame = () => {
-    setGameState('playing');
-  };
-
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-accent to-purple-600 flex items-center justify-center">
-            <Clock size={48} className="text-white" />
-          </div>
-
-          <h1 className="text-3xl font-bold text-text-primary mb-2">
-            Timeline Challenge
-          </h1>
-          <p className="text-text-secondary mb-6">
-            Drag and drop to arrange events in the correct order!
-          </p>
-
-          {/* Difficulty Badge */}
-          <div className="bg-surface-elevated rounded-xl p-4 mb-6 border border-white/10">
-            <div className="flex items-center justify-center gap-2 mb-3">
-              <BookOpen size={20} className={difficulty.color} />
-              <span className={`text-lg font-bold ${difficulty.color}`}>
-                {difficulty.level}
-              </span>
-            </div>
-            <div className="space-y-2 text-left">
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Difficulty:</span>
-                <span className={`font-medium ${difficulty.color}`}>{difficulty.label}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Year Group:</span>
-                <span className="text-text-primary font-medium">Year {yearGroup}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Challenges:</span>
-                <span className="text-text-primary font-medium">{challenges.length} timelines</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="bg-surface-elevated rounded-xl p-4 text-center border border-white/10">
-              <GripVertical size={24} className="text-accent mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Drag to reorder</p>
-            </div>
-            <div className="bg-surface-elevated rounded-xl p-4 text-center border border-white/10">
-              <Zap size={24} className="text-xp mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Earn XP</p>
-            </div>
-          </div>
-
-          <button
-            onClick={startGame}
-            className="w-full btn-primary py-4 flex items-center justify-center gap-2"
-          >
-            <Play size={20} />
-            Start Challenge
-          </button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Complete screen
-  if (gameComplete) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-green flex items-center justify-center"
-          >
-            <Trophy size={40} className="text-correct" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            All Timelines Complete!
-          </h1>
-          <p className="text-text-secondary mb-6">
-            You've mastered the sequences!
-          </p>
-
-          <div className="text-center mb-8">
-            <div className="text-4xl font-bold text-xp">{score}</div>
-            <div className="text-sm text-text-muted">Total XP earned</div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={resetGame}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              Play Again
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full card p-4 text-text-primary font-semibold flex items-center justify-center gap-2 hover:bg-surface-elevated transition-colors"
-            >
-              <Home size={20} />
-              Home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="glass sticky top-0 z-50 px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 hover:bg-surface-elevated rounded-lg transition-colors"
-          >
-            <X size={24} />
-          </button>
-          <div className="text-center">
-            <h1 className="font-bold text-text-primary">Timeline Challenge</h1>
-            <p className="text-xs text-text-muted">{currentIndex + 1} of {challenges.length}</p>
-          </div>
-          <div className="flex items-center gap-1">
-            <Zap size={18} className="text-xp" />
-            <span className="font-bold text-xp">{score}</span>
-          </div>
-        </div>
-      </header>
+    <>
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+      <GameFrame
+        title="Timeline Challenge"
+        subtitle="Drag and drop to arrange events in the correct order!"
+        icon={<Clock size={40} className="text-purple-400" />}
+        color="purple"
+        gameState={gameState}
+        onStart={handleStart}
+        onRestart={handleRestart}
+        time={time}
+        totalTime={TOTAL_TIME}
+        score={score}
+        combo={combo}
+        stats={stats}
+      >
+        {isPlaying && (
+          <div className="max-w-2xl mx-auto">
+            {/* Challenge Info */}
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              className="bg-[#1a1a2e] rounded-2xl p-6 mb-6 border border-white/10"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Clock size={20} className="text-purple-400" />
+                <span className="text-sm px-2 py-1 bg-purple-500/20 text-purple-400 rounded-full">
+                  {challenge.subject}
+                </span>
+                <span className="ml-auto text-sm text-gray-400">
+                  {currentIndex + 1} of {challenges.length}
+                </span>
+              </div>
+              <h2 className="text-xl font-bold text-white">{challenge.title}</h2>
+              <p className="text-sm text-gray-400 mt-2">
+                Drag to arrange in the correct order
+              </p>
+            </motion.div>
 
-      <main className="max-w-2xl mx-auto p-4 pb-32">
-        {/* Challenge Info */}
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="card p-6 mb-6"
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Clock size={20} className="text-accent" />
-            <span className="text-sm px-2 py-1 bg-pastel-purple text-accent rounded-full">
-              {challenge.subject}
-            </span>
-          </div>
-          <h2 className="text-xl font-bold text-text-primary">{challenge.title}</h2>
-          <p className="text-sm text-text-muted mt-2">
-            Drag to arrange in the correct order
-          </p>
-        </motion.div>
-
-        {/* Reorderable List */}
-        {!showResult ? (
-          <Reorder.Group
-            axis="y"
-            values={orderedEvents}
-            onReorder={setOrderedEvents}
-            className="space-y-3"
-          >
-            {orderedEvents.map((event, index) => (
-              <Reorder.Item
-                key={event.id}
-                value={event}
-                className="card p-4 cursor-grab active:cursor-grabbing touch-none"
-                whileDrag={{
-                  scale: 1.02,
-                  boxShadow: '0 8px 30px rgba(124, 92, 255, 0.2)',
-                }}
+            {/* Reorderable List */}
+            {!showResult ? (
+              <Reorder.Group
+                axis="y"
+                values={orderedEvents}
+                onReorder={setOrderedEvents}
+                className="space-y-3"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-pastel-purple rounded-full flex items-center justify-center text-accent font-bold">
-                    {index + 1}
-                  </div>
-                  <span className="flex-1 text-text-primary font-medium">{event.text}</span>
-                  <GripVertical size={20} className="text-text-muted" />
-                </div>
-              </Reorder.Item>
-            ))}
-          </Reorder.Group>
-        ) : (
-          <div className="space-y-3">
-            {orderedEvents.map((event, index) => {
-              const isCorrect = event.order === index + 1;
-
-              return (
-                <motion.div
-                  key={event.id}
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: index * 0.1 }}
-                  className={`card p-4 border-2 ${
-                    isCorrect ? 'bg-pastel-green border-correct' : 'bg-pastel-pink border-incorrect'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
-                      isCorrect ? 'bg-correct text-white' : 'bg-incorrect text-white'
-                    }`}>
-                      {isCorrect ? <CheckCircle size={18} /> : event.order}
+                {orderedEvents.map((event, index) => (
+                  <Reorder.Item
+                    key={event.id}
+                    value={event}
+                    className="bg-[#1a1a2e] rounded-xl p-4 cursor-grab active:cursor-grabbing touch-none border border-white/10"
+                    whileDrag={{
+                      scale: 1.02,
+                      boxShadow: '0 8px 30px rgba(168, 85, 247, 0.2)',
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-purple-500/20 rounded-full flex items-center justify-center text-purple-400 font-bold">
+                        {index + 1}
+                      </div>
+                      <span className="flex-1 text-white font-medium">{event.text}</span>
+                      <GripVertical size={20} className="text-gray-500" />
                     </div>
-                    <span className="flex-1 text-text-primary font-medium">{event.text}</span>
-                    {!isCorrect && (
-                      <span className="text-sm text-incorrect font-medium">
-                        Should be #{event.order}
-                      </span>
+                  </Reorder.Item>
+                ))}
+              </Reorder.Group>
+            ) : (
+              <div className="space-y-3">
+                {orderedEvents.map((event, index) => {
+                  const isCorrect = event.order === index + 1;
+
+                  return (
+                    <motion.div
+                      key={event.id}
+                      initial={{ x: -20, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: index * 0.1 }}
+                      className={`rounded-xl p-4 border-2 ${
+                        isCorrect
+                          ? 'bg-green-500/10 border-green-500/50'
+                          : 'bg-red-500/10 border-red-500/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                          isCorrect ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                        }`}>
+                          {isCorrect ? <CheckCircle size={18} /> : event.order}
+                        </div>
+                        <span className="flex-1 text-white font-medium">{event.text}</span>
+                        {!isCorrect && (
+                          <span className="text-sm text-red-400 font-medium">
+                            Should be #{event.order}
+                          </span>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Action Button / Explanation */}
+            {!showResult ? (
+              <motion.button
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                onClick={checkOrder}
+                className="w-full mt-6 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-bold py-4 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-colors"
+              >
+                Check Order
+              </motion.button>
+            ) : (
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="mt-6"
+              >
+                <div className={`rounded-xl p-4 mb-4 border ${
+                  correctCount === challenge.events.length
+                    ? 'bg-green-500/10 border-green-500/50'
+                    : 'bg-purple-500/10 border-purple-500/50'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {correctCount === challenge.events.length ? (
+                      <CheckCircle size={20} className="text-green-400" />
+                    ) : (
+                      <Clock size={20} className="text-purple-400" />
+                    )}
+                    <span className="font-bold text-white">
+                      {correctCount}/{challenge.events.length} correct
+                    </span>
+                    {correctCount === challenge.events.length && (
+                      <span className="ml-auto text-green-400 font-bold">Perfect!</span>
                     )}
                   </div>
-                </motion.div>
-              );
-            })}
+                  <p className="text-sm text-gray-300">{challenge.explanation}</p>
+                </div>
+
+                <button
+                  onClick={nextChallenge}
+                  className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white font-bold py-4 rounded-xl hover:from-purple-600 hover:to-purple-700 transition-colors"
+                >
+                  {currentIndex < challenges.length - 1 ? 'Next Timeline' : 'Complete'}
+                </button>
+              </motion.div>
+            )}
           </div>
         )}
-
-        {/* Action Button / Explanation */}
-        {!showResult ? (
-          <motion.button
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            onClick={checkOrder}
-            className="w-full mt-6 btn-primary py-4"
-          >
-            Check Order
-          </motion.button>
-        ) : (
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            className="mt-6"
-          >
-            <div className={`card p-4 mb-4 ${
-              correctCount === challenge.events.length ? 'bg-pastel-green' : 'bg-pastel-purple'
-            }`}>
-              <div className="flex items-center gap-2 mb-2">
-                {correctCount === challenge.events.length ? (
-                  <CheckCircle size={20} className="text-correct" />
-                ) : (
-                  <XCircle size={20} className="text-accent" />
-                )}
-                <span className="font-bold text-text-primary">
-                  {correctCount}/{challenge.events.length} correct
-                </span>
-                {correctCount === challenge.events.length && (
-                  <span className="ml-auto text-correct font-bold">+50 XP</span>
-                )}
-              </div>
-              <p className="text-sm text-text-secondary">{challenge.explanation}</p>
-            </div>
-
-            <button
-              onClick={nextChallenge}
-              className="w-full btn-primary py-4"
-            >
-              {currentIndex < challenges.length - 1 ? 'Next Timeline' : 'Complete'}
-            </button>
-          </motion.div>
-        )}
-      </main>
-    </div>
+      </GameFrame>
+    </>
   );
 }

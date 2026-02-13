@@ -1,22 +1,24 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
 import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
-  X,
-  Zap,
-  Clock,
-  Trophy,
-  RotateCcw,
-  Home,
-  Flame,
   Shuffle,
   Lightbulb,
   Delete,
 } from 'lucide-react';
+import {
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
 
 interface Word {
   word: string;
@@ -191,31 +193,52 @@ function scrambleWord(word: string): string {
   return arr.join('');
 }
 
+const TOTAL_TIME = 90;
+
 export default function WordScramblePage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
   const profile = useUserStore((state) => state.profile);
 
   // Get difficulty based on user's year group
   const yearGroup = profile?.yearGroup ?? 10;
-  const { level: difficultyLevel, label: difficultyLabel } = useMemo(
+  const { level: difficultyLevel } = useMemo(
     () => getDifficultyFromYearGroup(yearGroup),
     [yearGroup]
   );
   const words = useMemo(() => getWordsForDifficulty(difficultyLevel), [difficultyLevel]);
 
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
-  const [timeLeft, setTimeLeft] = useState(90);
-  const [score, setScore] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
+  // Game framework hooks
+  const { gameState, isPlaying, startGame: startGameState, finishGame, resetGame } = useGameState();
+  const {
+    score,
+    combo,
+    maxCombo,
+    correctAnswers,
+    wrongAnswers,
+    accuracy,
+    xpEarned,
+    isPerfect,
+    recordCorrect,
+    recordWrong,
+    reset: resetScore,
+  } = useGameScore({ basePointsPerQuestion: 100 });
+  const { playCorrect, playWrong } = useGameAudio();
+  const { shake } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  // Game-specific state
   const [currentWord, setCurrentWord] = useState<Word | null>(null);
   const [scrambled, setScrambled] = useState('');
   const [guess, setGuess] = useState('');
   const [showHint, setShowHint] = useState(false);
   const [usedWords, setUsedWords] = useState<Set<string>>(new Set());
-  const [solved, setSolved] = useState(0);
   const [showFeedback, setShowFeedback] = useState<'correct' | 'wrong' | null>(null);
+
+  // Timer hook with finishGame callback
+  const { time, start: startTimer, reset: resetTimer } = useGameTimer({
+    initialTime: TOTAL_TIME,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
 
   const newWord = useCallback(() => {
     const available = words.filter(w => !usedWords.has(w.word));
@@ -240,336 +263,196 @@ export default function WordScramblePage() {
     setShowFeedback(null);
   }, [usedWords, words]);
 
-  const startGame = () => {
-    setGameState('playing');
-    setTimeLeft(90);
-    setScore(0);
-    setCombo(0);
-    setMaxCombo(0);
-    setSolved(0);
+  const handleStart = useCallback(() => {
+    resetScore();
+    resetTimer();
     setUsedWords(new Set());
-    newWord();
-  };
+    startGameState();
+    startTimer();
+    // Get first word after a small delay to ensure state is ready
+    setTimeout(() => {
+      const word = words[Math.floor(Math.random() * words.length)];
+      setCurrentWord(word);
+      setScrambled(scrambleWord(word.word));
+      setUsedWords(new Set([word.word]));
+      setGuess('');
+      setShowHint(false);
+      setShowFeedback(null);
+    }, 0);
+  }, [resetScore, resetTimer, startGameState, startTimer, words]);
 
-  // Timer
-  useEffect(() => {
-    if (gameState !== 'playing') return;
+  const handleRestart = useCallback(() => {
+    resetGame();
+    handleStart();
+  }, [resetGame, handleStart]);
 
-    const timer = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          setGameState('finished');
-          addXP(score);
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [gameState, score, addXP]);
-
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (!currentWord || showFeedback) return;
 
     if (guess.toUpperCase() === currentWord.word) {
-      const comboBonus = Math.floor(combo / 2) * 5;
-      const hintPenalty = showHint ? 5 : 0;
-      const points = 20 + comboBonus - hintPenalty;
-      setScore(s => s + points);
-      setCombo(c => c + 1);
-      setMaxCombo(m => Math.max(m, combo + 1));
-      setSolved(s => s + 1);
+      // Hint penalty reduces points
+      const hintPenalty = showHint ? 50 : 0;
+      const pointsEarned = recordCorrect() - hintPenalty;
+      playCorrect(combo + 1);
+      emitCorrect();
       setShowFeedback('correct');
 
       setTimeout(() => {
         newWord();
       }, 500);
     } else {
-      setCombo(0);
+      recordWrong();
+      playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
       setShowFeedback('wrong');
       setTimeout(() => {
         setShowFeedback(null);
       }, 500);
     }
-  };
+  }, [currentWord, guess, showHint, showFeedback, combo, recordCorrect, recordWrong, playCorrect, playWrong, shake, emitCorrect, emitWrong, newWord]);
 
-  const handleLetterClick = (letter: string, index: number) => {
+  const handleLetterClick = useCallback((letter: string) => {
     setGuess(prev => prev + letter);
-  };
+  }, []);
 
-  const handleBackspace = () => {
+  const handleBackspace = useCallback(() => {
     setGuess(prev => prev.slice(0, -1));
-  };
+  }, []);
 
-  const handleSkip = () => {
-    setCombo(0);
+  const handleSkip = useCallback(() => {
+    recordWrong();
     newWord();
+  }, [recordWrong, newWord]);
+
+  // Build stats object for GameFrame
+  const stats = {
+    score,
+    correctAnswers,
+    wrongAnswers,
+    combo,
+    maxCombo,
+    accuracy,
+    xpEarned,
+    isPerfect,
   };
 
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-sm"
-        >
-          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-pastel-purple flex items-center justify-center">
-            <Shuffle size={48} className="text-accent" />
-          </div>
-
-          <h1 className="text-3xl font-bold text-text-primary mb-2">
-            Word Scramble
-          </h1>
-          <p className="text-text-secondary mb-4">
-            Unscramble scientific terms as fast as you can!
-          </p>
-
-          <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-accent/20 to-purple-500/20 border border-accent/30">
-            <span className="text-sm text-text-secondary">Difficulty:</span>
-            <span className="font-bold text-accent">{difficultyLabel}</span>
-            <span className="text-xs text-text-muted">(Year {yearGroup})</span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="card p-4 text-center">
-              <Clock size={24} className="text-accent mx-auto mb-2" />
-              <p className="text-sm text-text-muted">90 seconds</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Flame size={24} className="text-streak mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Build combos</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Lightbulb size={24} className="text-xp mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Use hints</p>
-            </div>
-          </div>
-
-          <button
-            onClick={startGame}
-            className="w-full btn-primary py-4 text-lg"
-          >
-            Start Game
-          </button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Finished screen
-  if (gameState === 'finished') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-purple flex items-center justify-center"
-          >
-            <Trophy size={40} className="text-accent" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            Word Wizard!
-          </h1>
-          <p className="text-text-secondary mb-6">
-            Great vocabulary skills!
-          </p>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-xp">{score}</div>
-              <div className="text-xs text-text-muted">Score</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-correct">{solved}</div>
-              <div className="text-xs text-text-muted">Solved</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-streak">{maxCombo}x</div>
-              <div className="text-xs text-text-muted">Max Combo</div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={startGame}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              Play Again
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full card p-4 text-text-primary font-semibold flex items-center justify-center gap-2 hover:bg-surface-elevated transition-colors"
-            >
-              <Home size={20} />
-              Home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Playing screen
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="glass sticky top-0 z-40 safe-top">
-        <div className="flex items-center justify-between px-4 py-3">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 -ml-2 text-text-muted hover:text-text-primary transition-colors"
-          >
-            <X size={24} />
-          </button>
+    <>
+      {/* Particle effects layer */}
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
 
-          <motion.div
-            className="flex items-center gap-2 px-4 py-2 bg-pastel-purple rounded-xl"
-            animate={timeLeft <= 10 ? { scale: [1, 1.1, 1] } : {}}
-            transition={{ repeat: timeLeft <= 10 ? Infinity : 0, duration: 0.5 }}
-          >
-            <Clock size={20} className={timeLeft <= 10 ? 'text-incorrect' : 'text-accent'} />
-            <span className={`font-mono font-bold text-lg ${timeLeft <= 10 ? 'text-incorrect' : 'text-accent'}`}>
-              {timeLeft}s
-            </span>
-          </motion.div>
-
-          <div className="flex items-center gap-2">
-            <Zap size={20} className="text-xp" />
-            <span className="font-bold text-xp">{score}</span>
-          </div>
-        </div>
-
-        {combo >= 2 && (
-          <div className="px-4 pb-2">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex justify-center"
-            >
-              <div className="px-4 py-1 bg-gradient-to-r from-streak/20 to-amber-500/20 border border-streak/30 rounded-full">
-                <span className="font-bold text-streak flex items-center gap-1">
-                  <Flame size={16} /> {combo}x Combo!
-                </span>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </header>
-
-      {/* Main content */}
-      <main className="flex-1 flex flex-col items-center justify-center p-6">
-        {currentWord && (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentWord.word}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="w-full max-w-md"
-            >
-              {/* Subject badge */}
-              <div className="flex justify-center mb-4">
-                <span className="px-3 py-1 rounded-full text-sm font-medium bg-pastel-blue text-blue-600">
-                  {currentWord.subject}
-                </span>
-              </div>
-
-              {/* Scrambled letters */}
-              <div className="card p-6 mb-4 text-center">
-                <div className="flex flex-wrap justify-center gap-2 mb-4">
-                  {scrambled.split('').map((letter, i) => (
-                    <motion.button
-                      key={i}
-                      initial={{ opacity: 0, y: -20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.03 }}
-                      onClick={() => handleLetterClick(letter, i)}
-                      className="w-10 h-10 rounded-lg bg-pastel-purple text-accent font-bold text-lg flex items-center justify-center hover:scale-110 transition-transform"
-                    >
-                      {letter}
-                    </motion.button>
-                  ))}
+      <GameFrame
+        title="Word Scramble"
+        subtitle="Unscramble scientific terms as fast as you can!"
+        icon={<Shuffle size={40} className="text-purple-400" />}
+        color="purple"
+        gameState={gameState}
+        onStart={handleStart}
+        onRestart={handleRestart}
+        time={time}
+        totalTime={TOTAL_TIME}
+        score={score}
+        combo={combo}
+        stats={stats}
+      >
+        {/* Game content - only rendered when playing */}
+        {isPlaying && currentWord && (
+          <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto w-full">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentWord.word}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="w-full"
+              >
+                {/* Subject badge */}
+                <div className="flex justify-center mb-4">
+                  <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                    {currentWord.subject}
+                  </span>
                 </div>
 
-                {/* Hint */}
-                {showHint ? (
-                  <p className="text-sm text-text-secondary">
-                    Hint: {currentWord.hint}
-                  </p>
-                ) : (
-                  <button
-                    onClick={() => setShowHint(true)}
-                    className="text-sm text-accent hover:underline flex items-center justify-center gap-1 mx-auto"
-                  >
-                    <Lightbulb size={14} /> Show hint (-5 points)
-                  </button>
-                )}
-              </div>
+                {/* Scrambled letters */}
+                <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 mb-4 text-center">
+                  <div className="flex flex-wrap justify-center gap-2 mb-4">
+                    {scrambled.split('').map((letter, i) => (
+                      <motion.button
+                        key={i}
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.03 }}
+                        onClick={() => handleLetterClick(letter)}
+                        className="w-10 h-10 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-400 font-bold text-lg flex items-center justify-center hover:scale-110 hover:bg-purple-500/30 transition-all"
+                      >
+                        {letter}
+                      </motion.button>
+                    ))}
+                  </div>
 
-              {/* Answer area */}
-              <div className={`card p-4 mb-4 min-h-[60px] flex items-center justify-center ${
-                showFeedback === 'correct' ? 'bg-pastel-green' :
-                showFeedback === 'wrong' ? 'bg-pastel-pink' : ''
-              }`}>
-                <div className="flex flex-wrap justify-center gap-1">
-                  {guess.split('').map((letter, i) => (
-                    <span
-                      key={i}
-                      className="w-8 h-8 rounded bg-surface-elevated text-text-primary font-bold flex items-center justify-center"
+                  {/* Hint */}
+                  {showHint ? (
+                    <p className="text-sm text-gray-400">
+                      Hint: {currentWord.hint}
+                    </p>
+                  ) : (
+                    <button
+                      onClick={() => setShowHint(true)}
+                      className="text-sm text-purple-400 hover:text-purple-300 hover:underline flex items-center justify-center gap-1 mx-auto transition-colors"
                     >
-                      {letter}
-                    </span>
-                  ))}
-                  {guess.length < currentWord.word.length && (
-                    <span className="w-8 h-8 rounded border-2 border-dashed border-border" />
+                      <Lightbulb size={14} /> Show hint (-50 points)
+                    </button>
                   )}
                 </div>
-              </div>
 
-              {/* Action buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={handleBackspace}
-                  className="card p-4 hover:bg-surface-elevated transition-colors"
-                >
-                  <Delete size={24} className="text-text-muted" />
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={guess.length !== currentWord.word.length}
-                  className="flex-1 btn-primary py-4 disabled:opacity-50"
-                >
-                  Check Answer
-                </button>
-                <button
-                  onClick={handleSkip}
-                  className="card p-4 hover:bg-surface-elevated transition-colors text-text-muted font-medium"
-                >
-                  Skip
-                </button>
-              </div>
-            </motion.div>
-          </AnimatePresence>
+                {/* Answer area */}
+                <div className={`bg-[#1a1a2e] border rounded-2xl p-4 mb-4 min-h-[60px] flex items-center justify-center transition-colors ${
+                  showFeedback === 'correct' ? 'border-green-500/50 bg-green-500/10' :
+                  showFeedback === 'wrong' ? 'border-red-500/50 bg-red-500/10' : 'border-white/10'
+                }`}>
+                  <div className="flex flex-wrap justify-center gap-1">
+                    {guess.split('').map((letter, i) => (
+                      <span
+                        key={i}
+                        className="w-8 h-8 rounded bg-white/10 text-white font-bold flex items-center justify-center"
+                      >
+                        {letter}
+                      </span>
+                    ))}
+                    {guess.length < currentWord.word.length && (
+                      <span className="w-8 h-8 rounded border-2 border-dashed border-white/20" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleBackspace}
+                    className="bg-[#1a1a2e] border border-white/10 rounded-xl p-4 hover:bg-white/5 transition-colors"
+                  >
+                    <Delete size={24} className="text-gray-400" />
+                  </button>
+                  <button
+                    onClick={handleSubmit}
+                    disabled={guess.length !== currentWord.word.length}
+                    className="flex-1 bg-gradient-to-r from-purple-500 to-purple-600 text-white font-bold py-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:from-purple-400 hover:to-purple-500 transition-all"
+                  >
+                    Check Answer
+                  </button>
+                  <button
+                    onClick={handleSkip}
+                    className="bg-[#1a1a2e] border border-white/10 rounded-xl px-4 hover:bg-white/5 transition-colors text-gray-400 font-medium"
+                  >
+                    Skip
+                  </button>
+                </div>
+              </motion.div>
+            </AnimatePresence>
+          </div>
         )}
-      </main>
-    </div>
+      </GameFrame>
+    </>
   );
 }

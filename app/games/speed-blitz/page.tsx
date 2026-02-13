@@ -2,19 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore } from '@/lib/stores/userStore';
+import { Rocket, Heart, AlertTriangle } from 'lucide-react';
 import {
-  X,
-  Zap,
-  Trophy,
-  RotateCcw,
-  Home,
-  Rocket,
-  AlertTriangle,
-  Heart,
-} from 'lucide-react';
+  GameFrame,
+  useGameState,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import { useUserStore } from '@/lib/stores/userStore';
 
 interface FallingAnswer {
   id: number;
@@ -59,10 +58,10 @@ const QUESTIONS: Question[] = [
 
   // A-Level Questions
   { question: 'Derivative of sin(x)?', correctAnswer: 'cos(x)', wrongAnswers: ['-cos(x)', 'tan(x)', '-sin(x)'], difficulty: 'A-Level' },
-  { question: 'What is Avogadro\'s number?', correctAnswer: '6.02 × 10²³', wrongAnswers: ['3.14 × 10²³', '9.81 × 10²³', '1.38 × 10²³'], difficulty: 'A-Level' },
+  { question: "What is Avogadro's number?", correctAnswer: '6.02 × 10²³', wrongAnswers: ['3.14 × 10²³', '9.81 × 10²³', '1.38 × 10²³'], difficulty: 'A-Level' },
   { question: 'What is the integral of 1/x?', correctAnswer: 'ln|x| + C', wrongAnswers: ['x⁻¹ + C', 'eˣ + C', '1/x² + C'], difficulty: 'A-Level' },
   { question: 'Which particle has no charge?', correctAnswer: 'Neutron', wrongAnswers: ['Proton', 'Electron', 'Positron'], difficulty: 'A-Level' },
-  { question: 'What is the units of Planck\'s constant?', correctAnswer: 'J·s', wrongAnswers: ['J/s', 'N·m', 'W·s'], difficulty: 'A-Level' },
+  { question: "What is the units of Planck's constant?", correctAnswer: 'J·s', wrongAnswers: ['J/s', 'N·m', 'W·s'], difficulty: 'A-Level' },
   { question: 'What is ATP used for?', correctAnswer: 'Energy transfer', wrongAnswers: ['Protein synthesis', 'Cell division', 'DNA replication'], difficulty: 'A-Level' },
   { question: 'E = mc² - what is c?', correctAnswer: 'Speed of light', wrongAnswers: ['Coulomb constant', 'Specific heat', 'Concentration'], difficulty: 'A-Level' },
   { question: 'Oxidation state of Fe in Fe₂O₃?', correctAnswer: '+3', wrongAnswers: ['+2', '+6', '+1'], difficulty: 'A-Level' },
@@ -88,24 +87,38 @@ function getQuestionsForDifficulty(difficulty: 'KS3' | 'GCSE' | 'A-Level'): Ques
 }
 
 export default function SpeedBlitzPage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
   const yearGroup = profile?.yearGroup || 10;
   const difficulty = getStartingDifficulty(yearGroup);
   const filteredQuestions = getQuestionsForDifficulty(difficulty);
 
+  // Game framework hooks
+  const { gameState, isPlaying, startGame: startGameState, finishGame, resetGame } = useGameState();
+  const {
+    score,
+    combo,
+    maxCombo,
+    correctAnswers,
+    wrongAnswers,
+    accuracy,
+    xpEarned,
+    isPerfect,
+    recordCorrect,
+    recordWrong,
+    reset: resetScore,
+  } = useGameScore({ basePointsPerQuestion: 100 });
+  const { playCorrect, playWrong } = useGameAudio();
+  const { shake, shakeStyle } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  // Game-specific state
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
-
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
-  const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [fallingAnswers, setFallingAnswers] = useState<FallingAnswer[]>([]);
-  const [combo, setCombo] = useState(0);
-  const [showFeedback, setShowFeedback] = useState<{ correct: boolean; x: number; y: number } | null>(null);
+  const [showFeedback, setShowFeedback] = useState<{ correct: boolean; x: number; y: number; points: number } | null>(null);
   const [gameSpeed, setGameSpeed] = useState(1);
 
   const spawnAnswers = useCallback(() => {
@@ -134,14 +147,13 @@ export default function SpeedBlitzPage() {
     setTimeout(() => spawnAnswers(), 100);
   }, [questionIndex, spawnAnswers, filteredQuestions]);
 
-  const startGame = () => {
-    setGameState('playing');
-    setScore(0);
+  const handleStart = () => {
+    startGameState();
     setLives(3);
     setQuestionIndex(0);
-    setCombo(0);
     setGameSpeed(1);
     setFallingAnswers([]);
+    resetScore();
     setTimeout(() => {
       const question = filteredQuestions[0];
       setCurrentQuestion(question);
@@ -149,16 +161,21 @@ export default function SpeedBlitzPage() {
     }, 500);
   };
 
+  const handleRestart = () => {
+    resetGame();
+    setTimeout(() => handleStart(), 100);
+  };
+
   // Spawn answers when question changes
   useEffect(() => {
-    if (currentQuestion && gameState === 'playing') {
+    if (currentQuestion && isPlaying) {
       spawnAnswers();
     }
-  }, [currentQuestion, gameState, spawnAnswers]);
+  }, [currentQuestion, isPlaying, spawnAnswers]);
 
   // Game loop - animate falling answers
   useEffect(() => {
-    if (gameState !== 'playing') return;
+    if (!isPlaying) return;
 
     const animate = () => {
       setFallingAnswers(prev => {
@@ -183,7 +200,9 @@ export default function SpeedBlitzPage() {
 
         if (missedCorrect) {
           setLives(l => l - 1);
-          setCombo(0);
+          recordWrong();
+          playWrong();
+          shake(ShakePresets.wrong);
           setFallingAnswers([]);
           setTimeout(() => nextQuestion(), 500);
         }
@@ -200,15 +219,14 @@ export default function SpeedBlitzPage() {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [gameState, gameSpeed, nextQuestion]);
+  }, [isPlaying, gameSpeed, nextQuestion, recordWrong, playWrong, shake]);
 
   // Check for game over
   useEffect(() => {
-    if (lives <= 0 && gameState === 'playing') {
-      setGameState('finished');
-      addXP(score);
+    if (lives <= 0 && isPlaying) {
+      finishGame();
     }
-  }, [lives, gameState, score, addXP]);
+  }, [lives, isPlaying, finishGame]);
 
   const handleAnswerClick = (answer: FallingAnswer, e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -216,10 +234,10 @@ export default function SpeedBlitzPage() {
     const feedbackY = rect.top;
 
     if (answer.isCorrect) {
-      const points = 25 + combo * 10;
-      setScore(s => s + points);
-      setCombo(c => c + 1);
-      setShowFeedback({ correct: true, x: feedbackX, y: feedbackY });
+      const points = recordCorrect();
+      playCorrect(combo + 1);
+      emitCorrect(feedbackX, feedbackY);
+      setShowFeedback({ correct: true, x: feedbackX, y: feedbackY, points });
       setFallingAnswers([]);
 
       // Speed up every 5 questions
@@ -233,8 +251,11 @@ export default function SpeedBlitzPage() {
       }, 400);
     } else {
       setLives(l => l - 1);
-      setCombo(0);
-      setShowFeedback({ correct: false, x: feedbackX, y: feedbackY });
+      recordWrong();
+      playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong(feedbackX, feedbackY);
+      setShowFeedback({ correct: false, x: feedbackX, y: feedbackY, points: 0 });
 
       // Remove wrong answer
       setFallingAnswers(prev => prev.filter(a => a.id !== answer.id));
@@ -243,179 +264,77 @@ export default function SpeedBlitzPage() {
     }
   };
 
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-indigo-900 via-violet-900 to-purple-900 flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-sm"
-        >
+  // Build stats object for GameFrame
+  const stats = {
+    score,
+    correctAnswers,
+    wrongAnswers,
+    combo,
+    maxCombo,
+    accuracy,
+    xpEarned,
+    isPerfect,
+  };
+
+  // Ready screen content
+  const readyContent = (
+    <div className="flex flex-col items-center justify-center h-full p-6">
+      <div className="flex justify-center gap-4 mb-8">
+        {[1, 2, 3].map((i) => (
           <motion.div
-            animate={{
-              y: [0, -20, 0],
-              rotate: [0, 5, -5, 0],
-            }}
-            transition={{ repeat: Infinity, duration: 2 }}
-            className="w-32 h-32 mx-auto mb-6 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-2xl shadow-cyan-500/50"
+            key={i}
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: i * 0.1 }}
           >
-            <Rocket size={64} className="text-white" />
+            <Heart size={32} className="text-red-500 fill-red-500" />
           </motion.div>
-
-          <h1 className="text-4xl font-black text-white mb-2 drop-shadow-lg">
-            SPEED BLITZ
-          </h1>
-          <p className="text-white/80 mb-2 text-lg">
-            Tap falling answers before they escape!
-          </p>
-          <p className="text-cyan-300 font-medium mb-8">
-            Difficulty: {difficulty} (Year {yearGroup})
-          </p>
-
-          <div className="flex justify-center gap-4 mb-8">
-            {[1, 2, 3].map((i) => (
-              <motion.div
-                key={i}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: i * 0.1 }}
-                className="text-4xl"
-              >
-                ❤️
-              </motion.div>
-            ))}
-          </div>
-
-          <div className="bg-white/10 rounded-xl p-4 mb-6 text-left">
-            <div className="flex items-center gap-2 text-yellow-400 mb-2">
-              <AlertTriangle size={20} />
-              <span className="font-bold">HOW TO PLAY</span>
-            </div>
-            <ul className="text-white/70 text-sm space-y-1">
-              <li>• Answers fall from above</li>
-              <li>• Tap the correct answer</li>
-              <li>• Speed increases over time</li>
-              <li>• Build combos for bonus points!</li>
-            </ul>
-          </div>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={startGame}
-            className="w-full py-5 text-xl font-black text-white bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl shadow-lg shadow-cyan-500/50"
-          >
-            START GAME
-          </motion.button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-6 text-white/60 hover:text-white transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
+        ))}
       </div>
-    );
-  }
 
-  // Finished screen
-  if (gameState === 'finished') {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-indigo-900 via-violet-900 to-purple-900 flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 w-full max-w-md text-center border border-white/20"
-        >
+      <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6 text-left max-w-xs">
+        <div className="flex items-center gap-2 text-yellow-400 mb-2">
+          <AlertTriangle size={20} />
+          <span className="font-bold">HOW TO PLAY</span>
+        </div>
+        <ul className="text-white/70 text-sm space-y-1">
+          <li>Answers fall from above</li>
+          <li>Tap the correct answer</li>
+          <li>Speed increases over time</li>
+          <li>Build combos for bonus points!</li>
+        </ul>
+      </div>
+    </div>
+  );
+
+  // Playing screen content
+  const playingContent = (
+    <div className="flex flex-col h-full" style={shakeStyle}>
+      {/* Particle effects */}
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+
+      {/* Lives display */}
+      <div className="flex justify-center gap-2 mb-4">
+        {Array.from({ length: 3 }).map((_, i) => (
           <motion.div
-            initial={{ scale: 0, rotate: -180 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-xl"
+            key={i}
+            animate={{ scale: i < lives ? 1 : 0.5, opacity: i < lives ? 1 : 0.3 }}
           >
-            <Trophy size={48} className="text-white" />
+            <Heart
+              size={24}
+              className={i < lives ? 'text-red-500 fill-red-500' : 'text-gray-600'}
+            />
           </motion.div>
-
-          <h1 className="text-3xl font-black text-white mb-2">
-            GAME OVER!
-          </h1>
-          <p className="text-white/70 mb-6">
-            You answered {questionIndex} questions!
-          </p>
-
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="bg-white/10 rounded-2xl p-4">
-              <div className="text-3xl font-black text-yellow-400">{score}</div>
-              <div className="text-xs text-white/60">SCORE</div>
-            </div>
-            <div className="bg-white/10 rounded-2xl p-4">
-              <div className="text-3xl font-black text-orange-400">{combo}</div>
-              <div className="text-xs text-white/60">MAX COMBO</div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={startGame}
-              className="w-full py-4 font-bold text-white bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              PLAY AGAIN
-            </motion.button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full py-4 font-bold text-white/80 bg-white/10 rounded-xl flex items-center justify-center gap-2 hover:bg-white/20 transition-colors"
-            >
-              <Home size={20} />
-              HOME
-            </button>
-          </div>
-        </motion.div>
+        ))}
       </div>
-    );
-  }
-
-  // Playing screen
-  return (
-    <div className="h-screen bg-gradient-to-b from-indigo-900 via-violet-900 to-purple-900 flex flex-col overflow-hidden">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 bg-black/30">
-        <button
-          onClick={() => router.push('/')}
-          className="p-2 text-white/60 hover:text-white transition-colors"
-        >
-          <X size={24} />
-        </button>
-
-        <div className="flex items-center gap-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <motion.span
-              key={i}
-              animate={{ scale: i < lives ? 1 : 0.5, opacity: i < lives ? 1 : 0.3 }}
-              className="text-2xl"
-            >
-              ❤️
-            </motion.span>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 px-4 py-2 bg-yellow-500/20 rounded-xl">
-          <Zap size={20} className="text-yellow-400" />
-          <span className="font-bold text-yellow-400">{score}</span>
-        </div>
-      </header>
 
       {/* Question */}
-      <div className="px-4 py-3 text-center">
+      <div className="px-4 mb-4 text-center">
         <motion.div
           key={currentQuestion?.question}
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white/10 backdrop-blur rounded-2xl px-6 py-4"
+          className="bg-white/5 border border-white/10 backdrop-blur rounded-2xl px-6 py-4"
         >
           <p className="text-white text-lg font-bold">
             {currentQuestion?.question}
@@ -429,7 +348,7 @@ export default function SpeedBlitzPage() {
             animate={{ scale: 1 }}
             className="mt-2 inline-block px-3 py-1 bg-gradient-to-r from-orange-500 to-red-500 rounded-full"
           >
-            <span className="font-bold text-white text-sm">🔥 {combo}x COMBO</span>
+            <span className="font-bold text-white text-sm">{combo}x COMBO</span>
           </motion.div>
         )}
       </div>
@@ -471,13 +390,13 @@ export default function SpeedBlitzPage() {
               }`}
               style={{ left: showFeedback.x - 30, top: showFeedback.y - 30 }}
             >
-              {showFeedback.correct ? `+${25 + (combo - 1) * 10}` : '-1'}
+              {showFeedback.correct ? `+${showFeedback.points}` : '-1'}
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* Speed indicator */}
-        <div className="absolute bottom-4 left-4 px-3 py-1 bg-black/50 rounded-full">
+        <div className="absolute bottom-4 left-4 px-3 py-1 bg-white/5 border border-white/10 rounded-full">
           <span className="text-white/70 text-sm">Speed: {gameSpeed.toFixed(1)}x</span>
         </div>
       </div>
@@ -487,5 +406,24 @@ export default function SpeedBlitzPage() {
         <span className="text-white/50 text-sm">Question {questionIndex}</span>
       </div>
     </div>
+  );
+
+  return (
+    <GameFrame
+      title="Speed Blitz"
+      subtitle="Tap falling answers before they escape!"
+      icon={<Rocket size={40} className="text-cyan-400" />}
+      color="cyan"
+      gameState={gameState}
+      onStart={handleStart}
+      onRestart={handleRestart}
+      score={score}
+      combo={combo}
+      showTimer={false}
+      stats={stats}
+    >
+      {gameState === 'ready' && readyContent}
+      {gameState === 'playing' && playingContent}
+    </GameFrame>
   );
 }

@@ -1,20 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
+import { FlaskConical } from 'lucide-react';
 import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
-  X,
-  Zap,
-  Clock,
-  Trophy,
-  RotateCcw,
-  Home,
-  Flame,
-  FlaskConical,
-} from 'lucide-react';
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
 
 type DifficultyLevel = 'KS3' | 'GCSE' | 'A-Level';
 
@@ -440,9 +440,9 @@ function generateQuestion(usedIds: Set<string>, formulas: Formula[]): Question |
   return { formula, questionType, question, correctAnswer, options };
 }
 
+const TOTAL_TIME = 60;
+
 export default function FormulaFrenzyPage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
 
   // Get difficulty from user's year group (default to GCSE if not set)
@@ -450,20 +450,40 @@ export default function FormulaFrenzyPage() {
   const difficulty = getDifficultyFromYearGroup(yearGroup);
   const formulas = getFormulasForDifficulty(difficulty);
 
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
-  const [timeLeft, setTimeLeft] = useState(60);
-  const [score, setScore] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
+  // Game framework hooks
+  const { gameState, isPlaying, startGame, finishGame, resetGame } = useGameState();
+  const { playCorrect, playWrong } = useGameAudio();
+  const { shake } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  const {
+    score,
+    combo,
+    maxCombo,
+    correctAnswers,
+    wrongAnswers,
+    accuracy,
+    xpEarned,
+    isPerfect,
+    recordCorrect,
+    recordWrong,
+    reset: resetScore,
+  } = useGameScore({ basePointsPerQuestion: 100 });
+
+  const { time, start: startTimer, reset: resetTimer } = useGameTimer({
+    initialTime: TOTAL_TIME,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+
+  // Game-specific state
   const [question, setQuestion] = useState<Question | null>(null);
   const [usedIds, setUsedIds] = useState<Set<string>>(new Set());
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
-  const [totalAnswered, setTotalAnswered] = useState(0);
-  const [correctAnswers, setCorrectAnswers] = useState(0);
 
-  const newQuestion = () => {
+  const newQuestion = useCallback(() => {
     const q = generateQuestion(usedIds, formulas);
     if (q) {
       setQuestion(q);
@@ -483,322 +503,185 @@ export default function FormulaFrenzyPage() {
     }
     setSelectedAnswer(null);
     setShowFeedback(false);
-  };
+  }, [usedIds, formulas]);
 
-  const startGame = () => {
-    setGameState('playing');
-    setTimeLeft(60);
-    setScore(0);
-    setCombo(0);
-    setMaxCombo(0);
+  const handleStartGame = useCallback(() => {
+    startGame();
+    resetScore();
+    resetTimer();
     setUsedIds(new Set());
-    setTotalAnswered(0);
-    setCorrectAnswers(0);
-    newQuestion();
-  };
+    startTimer();
+    // Generate first question after state reset
+    const q = generateQuestion(new Set(), formulas);
+    if (q) {
+      setQuestion(q);
+      setUsedIds(new Set([q.formula.id]));
+    }
+    setSelectedAnswer(null);
+    setShowFeedback(false);
+  }, [startGame, resetScore, resetTimer, startTimer, formulas]);
 
-  // Timer
-  useEffect(() => {
-    if (gameState !== 'playing') return;
+  const handleRestartGame = useCallback(() => {
+    resetGame();
+    handleStartGame();
+  }, [resetGame, handleStartGame]);
 
-    const timer = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          setGameState('finished');
-          addXP(score);
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [gameState, score, addXP]);
-
-  const handleAnswer = (answer: string) => {
+  const handleAnswer = useCallback((answer: string) => {
     if (showFeedback || !question) return;
 
     setSelectedAnswer(answer);
     setShowFeedback(true);
-    setTotalAnswered(t => t + 1);
 
     const correct = answer === question.correctAnswer;
     setIsCorrect(correct);
 
     if (correct) {
-      const comboBonus = Math.floor(combo / 3) * 5;
-      const points = 15 + comboBonus;
-      setScore(s => s + points);
-      setCombo(c => c + 1);
-      setMaxCombo(m => Math.max(m, combo + 1));
-      setCorrectAnswers(c => c + 1);
+      recordCorrect();
+      playCorrect(combo + 1);
+      emitCorrect();
     } else {
-      setCombo(0);
+      recordWrong();
+      playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
     }
 
     setTimeout(() => {
       newQuestion();
     }, correct ? 400 : 1000);
+  }, [showFeedback, question, combo, recordCorrect, recordWrong, playCorrect, playWrong, shake, emitCorrect, emitWrong, newQuestion]);
+
+  // Stats object for GameFrame
+  const stats = {
+    score,
+    correctAnswers,
+    wrongAnswers,
+    combo,
+    maxCombo,
+    accuracy,
+    xpEarned,
+    isPerfect,
   };
 
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-sm"
-        >
-          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-pastel-blue flex items-center justify-center">
-            <FlaskConical size={48} className="text-blue-500" />
-          </div>
+  // Get subject badge colors (dark theme)
+  const getSubjectBadgeClasses = (subject: string) => {
+    switch (subject) {
+      case 'Physics':
+        return 'bg-purple-500/20 text-purple-400';
+      case 'Chemistry':
+        return 'bg-green-500/20 text-green-400';
+      case 'Maths':
+        return 'bg-blue-500/20 text-blue-400';
+      default:
+        return 'bg-gray-500/20 text-gray-400';
+    }
+  };
 
-          <h1 className="text-3xl font-bold text-text-primary mb-2">
-            Formula Frenzy
-          </h1>
-          <p className="text-text-secondary mb-4">
-            Match formulas to their names! Physics, Chemistry & Maths equations.
-          </p>
-
-          {/* Difficulty Badge */}
-          <div className="flex justify-center mb-6">
-            <span className={`px-4 py-2 rounded-full text-sm font-bold ${
-              difficulty === 'KS3' ? 'bg-pastel-green text-correct' :
-              difficulty === 'GCSE' ? 'bg-pastel-blue text-blue-600' :
-              'bg-pastel-purple text-accent'
-            }`}>
-              {difficulty} Level ({formulas.length} formulas)
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="card p-4 text-center">
-              <Clock size={24} className="text-accent mx-auto mb-2" />
-              <p className="text-sm text-text-muted">60 seconds</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Flame size={24} className="text-streak mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Build combos</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Zap size={24} className="text-xp mx-auto mb-2" />
-              <p className="text-sm text-text-muted">15+ XP each</p>
-            </div>
-          </div>
-
-          <button
-            onClick={startGame}
-            className="w-full btn-primary py-4 text-lg"
-          >
-            Start Game
-          </button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Finished screen
-  if (gameState === 'finished') {
-    const accuracy = totalAnswered > 0 ? Math.round((correctAnswers / totalAnswered) * 100) : 0;
-
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-blue flex items-center justify-center"
-          >
-            <Trophy size={40} className="text-blue-500" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            Formula Master!
-          </h1>
-          <p className="text-text-secondary mb-6">
-            Great formula knowledge!
-          </p>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-xp">{score}</div>
-              <div className="text-xs text-text-muted">Score</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-streak">{maxCombo}x</div>
-              <div className="text-xs text-text-muted">Max Combo</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-correct">{accuracy}%</div>
-              <div className="text-xs text-text-muted">Accuracy</div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={startGame}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              Play Again
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full card p-4 text-text-primary font-semibold flex items-center justify-center gap-2 hover:bg-surface-elevated transition-colors"
-            >
-              <Home size={20} />
-              Home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Playing screen
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="glass sticky top-0 z-40 safe-top">
-        <div className="flex items-center justify-between px-4 py-3">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 -ml-2 text-text-muted hover:text-text-primary transition-colors"
-          >
-            <X size={24} />
-          </button>
+    <>
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+      <GameFrame
+        title="Formula Frenzy"
+        subtitle="Match formulas to their names! Physics, Chemistry & Maths equations."
+        icon={<FlaskConical size={40} className="text-blue-400" />}
+        color="blue"
+        gameState={gameState}
+        onStart={handleStartGame}
+        onRestart={handleRestartGame}
+        time={time}
+        totalTime={TOTAL_TIME}
+        score={score}
+        combo={combo}
+        stats={stats}
+      >
+        {isPlaying && question && (
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={question.formula.id + question.questionType}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+                className="w-full max-w-md"
+              >
+                {/* Subject badge */}
+                <div className="flex justify-center mb-4">
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${getSubjectBadgeClasses(question.formula.subject)}`}>
+                    {question.formula.subject}
+                  </span>
+                </div>
 
-          <motion.div
-            className="flex items-center gap-2 px-4 py-2 bg-pastel-blue rounded-xl"
-            animate={timeLeft <= 10 ? { scale: [1, 1.1, 1] } : {}}
-            transition={{ repeat: timeLeft <= 10 ? Infinity : 0, duration: 0.5 }}
-          >
-            <Clock size={20} className={timeLeft <= 10 ? 'text-incorrect' : 'text-blue-500'} />
-            <span className={`font-mono font-bold text-lg ${timeLeft <= 10 ? 'text-incorrect' : 'text-blue-500'}`}>
-              {timeLeft}s
-            </span>
-          </motion.div>
+                {/* Question */}
+                <div className="p-6 mb-6 text-center rounded-xl bg-[#1a1a24] border border-white/10">
+                  <p className="text-xl font-bold text-white">
+                    {question.question}
+                  </p>
+                </div>
 
-          <div className="flex items-center gap-2">
-            <Zap size={20} className="text-xp" />
-            <span className="font-bold text-xp">{score}</span>
-          </div>
-        </div>
+                {/* Options */}
+                <div className="space-y-3">
+                  {question.options.map((option, index) => {
+                    const isSelected = selectedAnswer === option;
+                    const isCorrectAnswer = option === question.correctAnswer;
 
-        {combo >= 2 && (
-          <div className="px-4 pb-2">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex justify-center"
-            >
-              <div className="px-4 py-1 bg-gradient-to-r from-streak/20 to-amber-500/20 border border-streak/30 rounded-full">
-                <span className="font-bold text-streak flex items-center gap-1">
-                  <Flame size={16} /> {combo}x Combo!
-                </span>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </header>
+                    let buttonClasses = 'w-full p-4 rounded-xl text-lg font-semibold transition-all duration-200 text-center border';
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col items-center justify-center p-6">
-        {question && (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={question.formula.id + question.questionType}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
-              className="w-full max-w-md"
-            >
-              {/* Subject badge */}
-              <div className="flex justify-center mb-4">
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  question.formula.subject === 'Physics' ? 'bg-pastel-purple text-accent' :
-                  question.formula.subject === 'Chemistry' ? 'bg-pastel-green text-correct' :
-                  'bg-pastel-blue text-blue-600'
-                }`}>
-                  {question.formula.subject}
-                </span>
-              </div>
+                    if (showFeedback) {
+                      if (isCorrectAnswer) {
+                        buttonClasses += ' bg-green-500/20 border-green-500 text-green-400';
+                      } else if (isSelected) {
+                        buttonClasses += ' bg-red-500/20 border-red-500 text-red-400';
+                      } else {
+                        buttonClasses += ' bg-[#1a1a24] border-white/10 text-gray-500';
+                      }
+                    } else {
+                      buttonClasses += ' bg-[#1a1a24] border-white/10 text-white hover:bg-[#252532] hover:border-white/20';
+                    }
 
-              {/* Question */}
-              <div className="card p-6 mb-6 text-center">
-                <p className="text-xl font-bold text-text-primary">
-                  {question.question}
-                </p>
-              </div>
+                    return (
+                      <motion.button
+                        key={index}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        onClick={() => handleAnswer(option)}
+                        className={buttonClasses}
+                        disabled={showFeedback}
+                      >
+                        {option}
+                      </motion.button>
+                    );
+                  })}
+                </div>
 
-              {/* Options */}
-              <div className="space-y-3">
-                {question.options.map((option, index) => {
-                  const isSelected = selectedAnswer === option;
-                  const isCorrectAnswer = option === question.correctAnswer;
-
-                  let className = 'option-card justify-center text-lg font-semibold';
-                  if (showFeedback) {
-                    if (isCorrectAnswer) className += ' correct';
-                    else if (isSelected) className += ' wrong';
-                  }
-
-                  return (
-                    <motion.button
-                      key={index}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      onClick={() => handleAnswer(option)}
-                      className={className}
-                      disabled={showFeedback}
+                {/* Feedback */}
+                <AnimatePresence>
+                  {showFeedback && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className={`mt-4 p-4 rounded-xl ${
+                        isCorrect ? 'bg-green-500/20 border border-green-500/50' : 'bg-red-500/20 border border-red-500/50'
+                      }`}
                     >
-                      {option}
-                    </motion.button>
-                  );
-                })}
-              </div>
-
-              {/* Feedback */}
-              <AnimatePresence>
-                {showFeedback && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className={`mt-4 p-4 rounded-xl ${
-                      isCorrect ? 'bg-pastel-green' : 'bg-pastel-pink'
-                    }`}
-                  >
-                    <p className={`font-bold text-center ${isCorrect ? 'text-correct' : 'text-incorrect'}`}>
-                      {isCorrect ? `+${15 + Math.floor(combo / 3) * 5} points!` : `Answer: ${question.correctAnswer}`}
-                    </p>
-                    {!isCorrect && (
-                      <p className="text-sm text-text-secondary text-center mt-1">
-                        {question.formula.name}: {question.formula.formula}
+                      <p className={`font-bold text-center ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                        {isCorrect ? `+${score > 0 ? 100 + (combo > 1 ? Math.floor((combo - 1) * 10) : 0) : 100} points!` : `Answer: ${question.correctAnswer}`}
                       </p>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          </AnimatePresence>
+                      {!isCorrect && (
+                        <p className="text-sm text-gray-400 text-center mt-1">
+                          {question.formula.name}: {question.formula.formula}
+                        </p>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            </AnimatePresence>
+          </div>
         )}
-      </main>
-    </div>
+      </GameFrame>
+    </>
   );
 }

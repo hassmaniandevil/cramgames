@@ -1,19 +1,21 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore } from '@/lib/stores/userStore';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Brain } from 'lucide-react';
 import {
-  X,
-  Zap,
-  Trophy,
-  RotateCcw,
-  Home,
-  Brain,
-  Clock,
-} from 'lucide-react';
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import { useUserStore } from '@/lib/stores/userStore';
+import { cn } from '@/lib/utils/cn';
 
 interface Card {
   id: number;
@@ -165,25 +167,36 @@ function createCards(gamePairs: Pair[]): Card[] {
   return shuffleArray(cards);
 }
 
+const TOTAL_PAIRS = 6; // 12 cards total
+const GAME_TIME = 90; // 90 seconds to match all pairs
+
 export default function MemoryMatchPage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
 
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
+  // Game framework hooks
+  const { gameState, isPlaying, startGame, finishGame, resetGame } = useGameState();
+  const timer = useGameTimer({
+    initialTime: GAME_TIME,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+  const scoring = useGameScore({ basePointsPerQuestion: 100 });
+  const audio = useGameAudio();
+  const { shake, shakeStyle } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  // Game-specific state
   const [cards, setCards] = useState<Card[]>([]);
   const [flippedCards, setFlippedCards] = useState<number[]>([]);
+  const [isChecking, setIsChecking] = useState(false);
   const [moves, setMoves] = useState(0);
   const [matches, setMatches] = useState(0);
-  const [score, setScore] = useState(0);
-  const [timer, setTimer] = useState(0);
-  const [isChecking, setIsChecking] = useState(false);
 
   // Get year group from profile, default to 10 (GCSE) if not set
   const yearGroup = profile?.yearGroup ?? 10;
 
   // Determine difficulty based on year group
-  const { level: difficultyLevel, filter: difficultyFilter } = useMemo(
+  const { filter: difficultyFilter } = useMemo(
     () => getDifficultyFromYearGroup(yearGroup),
     [yearGroup]
   );
@@ -194,29 +207,25 @@ export default function MemoryMatchPage() {
     [difficultyFilter]
   );
 
-  const totalPairs = 6; // 12 cards total
-
-  const startGame = () => {
-    const gamePairs = shuffleArray(availablePairs).slice(0, totalPairs);
+  // Handle game start
+  const handleStart = useCallback(() => {
+    const gamePairs = shuffleArray(availablePairs).slice(0, TOTAL_PAIRS);
     setCards(createCards(gamePairs));
     setFlippedCards([]);
     setMoves(0);
     setMatches(0);
-    setScore(0);
-    setTimer(0);
-    setGameState('playing');
-  };
+    setIsChecking(false);
+    startGame();
+    timer.reset(GAME_TIME);
+    timer.start();
+    scoring.reset();
+  }, [availablePairs, startGame, timer, scoring]);
 
-  // Timer
-  useEffect(() => {
-    if (gameState !== 'playing') return;
-
-    const interval = setInterval(() => {
-      setTimer(t => t + 1);
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [gameState]);
+  // Handle restart
+  const handleRestart = useCallback(() => {
+    resetGame();
+    setTimeout(handleStart, 100);
+  }, [resetGame, handleStart]);
 
   // Check for match
   useEffect(() => {
@@ -235,19 +244,20 @@ export default function MemoryMatchPage() {
             ? { ...card, isMatched: true }
             : card
         ));
-        setMatches(m => m + 1);
-        setScore(s => s + 25);
+        const newMatches = matches + 1;
+        setMatches(newMatches);
         setFlippedCards([]);
         setIsChecking(false);
 
+        // Record correct match
+        scoring.recordCorrect();
+        audio.playCorrect(scoring.combo);
+        emitCorrect();
+
         // Check if game complete
-        if (matches + 1 === totalPairs) {
-          const timeBonus = Math.max(0, 100 - timer);
-          const moveBonus = Math.max(0, 50 - (moves - totalPairs) * 2);
-          const finalScore = score + 25 + timeBonus + moveBonus;
-          setScore(finalScore);
-          addXP(finalScore);
-          setGameState('finished');
+        if (newMatches === TOTAL_PAIRS) {
+          timer.pause();
+          finishGame();
         }
       }, 500);
     } else {
@@ -260,13 +270,19 @@ export default function MemoryMatchPage() {
         ));
         setFlippedCards([]);
         setIsChecking(false);
+
+        // Record wrong
+        scoring.recordWrong();
+        audio.playWrong();
+        shake(ShakePresets.wrong);
+        emitWrong();
       }, 1000);
     }
 
     setMoves(m => m + 1);
-  }, [flippedCards, cards, matches, moves, score, timer, totalPairs, addXP]);
+  }, [flippedCards, cards, matches, scoring, audio, shake, emitCorrect, emitWrong, timer, finishGame]);
 
-  const handleCardClick = (cardId: number) => {
+  const handleCardClick = useCallback((cardId: number) => {
     if (isChecking) return;
     if (flippedCards.length >= 2) return;
 
@@ -277,203 +293,94 @@ export default function MemoryMatchPage() {
       c.id === cardId ? { ...c, isFlipped: true } : c
     ));
     setFlippedCards(prev => [...prev, cardId]);
+  }, [isChecking, flippedCards, cards]);
+
+  // Calculate stats for results
+  const stats = {
+    score: scoring.score,
+    correctAnswers: scoring.correctAnswers,
+    wrongAnswers: scoring.wrongAnswers,
+    combo: scoring.combo,
+    maxCombo: scoring.maxCombo,
+    accuracy: scoring.accuracy,
+    xpEarned: scoring.xpEarned,
+    isPerfect: scoring.isPerfect,
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-sm"
-        >
-          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-pastel-pink flex items-center justify-center">
-            <Brain size={48} className="text-pink-500" />
-          </div>
-
-          <h1 className="text-3xl font-bold text-text-primary mb-2">
-            Memory Match
-          </h1>
-          <p className="text-text-secondary mb-4">
-            Match scientific terms with their definitions!
-          </p>
-
-          <div className={`inline-block px-4 py-2 rounded-full text-sm font-semibold mb-6 ${
-            difficultyLevel === 'KS3'
-              ? 'bg-pastel-green text-green-600'
-              : difficultyLevel === 'GCSE'
-              ? 'bg-pastel-blue text-blue-600'
-              : 'bg-pastel-purple text-purple-600'
-          }`}>
-            {difficultyLevel} Difficulty
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="card p-4 text-center">
-              <div className="text-2xl font-bold text-accent">{totalPairs * 2}</div>
-              <p className="text-sm text-text-muted">Cards</p>
-            </div>
-            <div className="card p-4 text-center">
-              <div className="text-2xl font-bold text-correct">{totalPairs}</div>
-              <p className="text-sm text-text-muted">Pairs</p>
-            </div>
-          </div>
-
-          <button
-            onClick={startGame}
-            className="w-full btn-primary py-4 text-lg"
-          >
-            Start Game
-          </button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Finished screen
-  if (gameState === 'finished') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-pink flex items-center justify-center"
-          >
-            <Trophy size={40} className="text-pink-500" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            Memory Master!
-          </h1>
-          <p className="text-text-secondary mb-6">
-            All pairs matched!
-          </p>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-xp">{score}</div>
-              <div className="text-xs text-text-muted">Score</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-accent">{moves}</div>
-              <div className="text-xs text-text-muted">Moves</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-correct">{formatTime(timer)}</div>
-              <div className="text-xs text-text-muted">Time</div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={startGame}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              Play Again
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full card p-4 text-text-primary font-semibold flex items-center justify-center gap-2 hover:bg-surface-elevated transition-colors"
-            >
-              <Home size={20} />
-              Home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Playing screen
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="glass sticky top-0 z-40 safe-top">
-        <div className="flex items-center justify-between px-4 py-3">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 -ml-2 text-text-muted hover:text-text-primary transition-colors"
-          >
-            <X size={24} />
-          </button>
+    <>
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
 
-          <div className="flex items-center gap-2 px-4 py-2 bg-pastel-pink rounded-xl">
-            <Clock size={20} className="text-pink-500" />
-            <span className="font-mono font-bold text-lg text-pink-500">
-              {formatTime(timer)}
-            </span>
+      <GameFrame
+        title="Memory Match"
+        subtitle="Match scientific terms with their definitions!"
+        icon={<Brain size={40} className="text-pink-400" />}
+        color="pink"
+        gameState={gameState}
+        onStart={handleStart}
+        onRestart={handleRestart}
+        time={timer.time}
+        totalTime={GAME_TIME}
+        score={scoring.score}
+        combo={scoring.combo}
+        stats={stats}
+        zoneId="science-memory"
+      >
+        <div style={shakeStyle} className="h-full flex flex-col items-center justify-center">
+          {/* Progress indicator */}
+          <div className="mb-4 flex items-center gap-4">
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10">
+              <span className="text-sm text-gray-400">Pairs:</span>
+              <span className="font-bold text-white">{matches}/{TOTAL_PAIRS}</span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10">
+              <span className="text-sm text-gray-400">Moves:</span>
+              <span className="font-bold text-white">{moves}</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="text-center">
-              <div className="text-lg font-bold text-accent">{moves}</div>
-              <div className="text-xs text-text-muted">Moves</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-correct">{matches}/{totalPairs}</div>
-              <div className="text-xs text-text-muted">Pairs</div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Game grid */}
-      <main className="flex-1 flex items-center justify-center p-4">
-        <div className="grid grid-cols-3 gap-3 max-w-md w-full">
-          {cards.map((card) => (
-            <motion.button
-              key={card.id}
-              onClick={() => handleCardClick(card.id)}
-              className={`aspect-[3/4] rounded-xl text-sm font-medium p-2 transition-all ${
-                card.isMatched
-                  ? 'bg-pastel-green border-2 border-correct'
-                  : card.isFlipped
-                  ? card.type === 'term'
-                    ? 'bg-pastel-purple border-2 border-accent'
-                    : 'bg-pastel-blue border-2 border-blue-500'
-                  : 'bg-surface-elevated hover:bg-surface-elevated/80'
-              }`}
-              whileHover={!card.isFlipped && !card.isMatched ? { scale: 1.05 } : {}}
-              whileTap={!card.isFlipped && !card.isMatched ? { scale: 0.95 } : {}}
-            >
-              {card.isFlipped || card.isMatched ? (
-                <motion.span
-                  initial={{ opacity: 0, rotateY: 90 }}
-                  animate={{ opacity: 1, rotateY: 0 }}
-                  className={`block ${
-                    card.type === 'term' ? 'text-accent font-bold' : 'text-text-primary'
-                  }`}
+          {/* Game grid */}
+          <div className="grid grid-cols-3 gap-3 max-w-md w-full">
+            <AnimatePresence>
+              {cards.map((card) => (
+                <motion.button
+                  key={card.id}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  onClick={() => handleCardClick(card.id)}
+                  className={cn(
+                    'aspect-[3/4] rounded-xl text-sm font-medium p-2 transition-all border-2',
+                    card.isMatched
+                      ? 'bg-green-500/20 border-green-500 text-green-400'
+                      : card.isFlipped
+                        ? card.type === 'term'
+                          ? 'bg-purple-500/20 border-purple-500 text-purple-400'
+                          : 'bg-blue-500/20 border-blue-500 text-blue-400'
+                        : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-pink-500/50'
+                  )}
+                  whileHover={!card.isFlipped && !card.isMatched ? { scale: 1.05 } : {}}
+                  whileTap={!card.isFlipped && !card.isMatched ? { scale: 0.95 } : {}}
                 >
-                  {card.content}
-                </motion.span>
-              ) : (
-                <span className="text-2xl">?</span>
-              )}
-            </motion.button>
-          ))}
+                  {card.isFlipped || card.isMatched ? (
+                    <motion.span
+                      initial={{ opacity: 0, rotateY: 90 }}
+                      animate={{ opacity: 1, rotateY: 0 }}
+                      className={cn(
+                        'block',
+                        card.type === 'term' ? 'font-bold' : ''
+                      )}
+                    >
+                      {card.content}
+                    </motion.span>
+                  ) : (
+                    <span className="text-2xl text-gray-400">?</span>
+                  )}
+                </motion.button>
+              ))}
+            </AnimatePresence>
+          </div>
         </div>
-      </main>
-    </div>
+      </GameFrame>
+    </>
   );
 }

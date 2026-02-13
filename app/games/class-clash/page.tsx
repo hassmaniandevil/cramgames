@@ -1,16 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
   X,
-  Zap,
   Trophy,
-  RotateCcw,
-  Home,
   Users,
   Crown,
   Medal,
@@ -19,8 +14,20 @@ import {
   School,
   Copy,
   Check,
-  Share2,
 } from 'lucide-react';
+import {
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
+import { cn } from '@/lib/utils/cn';
 
 interface Question {
   question: string;
@@ -65,82 +72,53 @@ function getDifficultyLevel(yearGroup: YearGroup | undefined): { label: string; 
     return { label: 'GCSE Level', level: 'GCSE' };
   }
   if (yearGroup <= 6) {
-    // Primary years 1-6 default to KS3 difficulty (easiest available)
     return { label: 'KS3 Level', level: 'KS3' };
   }
   if (yearGroup <= 9) {
-    // Years 7-9 are KS3
     return { label: 'KS3 Level', level: 'KS3' };
   }
   if (yearGroup <= 11) {
-    // Years 10-11 are GCSE
     return { label: 'GCSE Level', level: 'GCSE' };
   }
-  // Years 12-13 are A-Level
   return { label: 'A-Level', level: 'A-Level' };
 }
 
+const CLASSES = ['10A', '10B', '10C', '10D', '11A', '11B', '11C', '11D', '9A', '9B', '9C'];
+const GAME_TIME = 90; // 90 seconds for the game
+
 export default function ClassClashPage() {
   const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
-
-  // Get year group from user profile and determine difficulty
   const yearGroup = profile?.yearGroup;
   const difficultyInfo = getDifficultyLevel(yearGroup);
 
-  const [gameState, setGameState] = useState<'menu' | 'select-class' | 'playing' | 'results' | 'leaderboard'>('menu');
+  // View state for pre/post game screens
+  const [view, setView] = useState<'menu' | 'select-class' | 'game' | 'leaderboard'>('menu');
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [score, setScore] = useState(0);
-  const [streak, setStreak] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
-  const [showResult, setShowResult] = useState(false);
-  const [correctAnswers, setCorrectAnswers] = useState(0);
   const [classCode, setClassCode] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const startGame = () => {
-    const shuffled = [...QUESTIONS].sort(() => Math.random() - 0.5).slice(0, 10);
-    setQuestions(shuffled);
-    setCurrentQuestion(0);
-    setScore(0);
-    setStreak(0);
-    setCorrectAnswers(0);
-    setSelectedAnswer(null);
-    setShowResult(false);
-    setGameState('playing');
-  };
+  // Game framework hooks
+  const { gameState, isPlaying, startGame: startGameState, finishGame, resetGame } = useGameState();
+  const timer = useGameTimer({
+    initialTime: GAME_TIME,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+  const scoring = useGameScore({ basePointsPerQuestion: 100 });
+  const { playCorrect, playWrong } = useGameAudio();
+  const { shake, shakeStyle } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
 
-  const handleAnswer = (index: number) => {
-    if (showResult) return;
+  // Game-specific state
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
 
-    setSelectedAnswer(index);
-    setShowResult(true);
+  const currentQuestion = questions[currentQuestionIndex];
 
-    const question = questions[currentQuestion];
-    if (index === question.correctIndex) {
-      const streakBonus = Math.min(streak * 10, 50);
-      setScore(s => s + question.points + streakBonus);
-      setStreak(s => s + 1);
-      setCorrectAnswers(c => c + 1);
-    } else {
-      setStreak(0);
-    }
-
-    setTimeout(() => {
-      if (currentQuestion < questions.length - 1) {
-        setCurrentQuestion(q => q + 1);
-        setSelectedAnswer(null);
-        setShowResult(false);
-      } else {
-        setGameState('results');
-        addXP(score);
-      }
-    }, 1500);
-  };
-
+  // Generate class code
   const generateClassCode = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = 'CLASS-';
@@ -150,22 +128,86 @@ export default function ClassClashPage() {
     return code;
   };
 
-  const selectClass = (className: string) => {
-    setSelectedClass(className);
-    setClassCode(generateClassCode());
-    startGame();
-  };
-
+  // Copy class code
   const copyCode = async () => {
     await navigator.clipboard.writeText(classCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Select class and start game
+  const selectClass = (className: string) => {
+    setSelectedClass(className);
+    setClassCode(generateClassCode());
+    setView('game');
+  };
+
+  // Handle game start (called by GameFrame)
+  const handleStart = useCallback(() => {
+    const shuffled = [...QUESTIONS].sort(() => Math.random() - 0.5).slice(0, 10);
+    setQuestions(shuffled);
+    setCurrentQuestionIndex(0);
+    setSelectedAnswer(null);
+    setShowFeedback(false);
+    scoring.reset();
+    timer.reset(GAME_TIME);
+    startGameState();
+    timer.start();
+  }, [scoring, timer, startGameState]);
+
+  // Handle restart
+  const handleRestart = useCallback(() => {
+    resetGame();
+    setTimeout(handleStart, 100);
+  }, [resetGame, handleStart]);
+
+  // Handle answer selection
+  const handleAnswer = useCallback((index: number) => {
+    if (showFeedback || !currentQuestion) return;
+
+    setSelectedAnswer(index);
+    setShowFeedback(true);
+
+    const isCorrect = index === currentQuestion.correctIndex;
+
+    if (isCorrect) {
+      scoring.recordCorrect();
+      playCorrect(scoring.combo + 1);
+      emitCorrect();
+    } else {
+      scoring.recordWrong();
+      playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
+    }
+
+    setTimeout(() => {
+      if (currentQuestionIndex < questions.length - 1) {
+        setCurrentQuestionIndex(i => i + 1);
+        setSelectedAnswer(null);
+        setShowFeedback(false);
+      } else {
+        finishGame();
+      }
+    }, isCorrect ? 500 : 1000);
+  }, [showFeedback, currentQuestion, currentQuestionIndex, questions.length, scoring, playCorrect, playWrong, shake, emitCorrect, emitWrong, finishGame]);
+
+  // Build stats for GameFrame
+  const stats = {
+    score: scoring.score,
+    correctAnswers: scoring.correctAnswers,
+    wrongAnswers: scoring.wrongAnswers,
+    combo: scoring.combo,
+    maxCombo: scoring.maxCombo,
+    accuracy: scoring.accuracy,
+    xpEarned: scoring.xpEarned,
+    isPerfect: scoring.isPerfect,
+  };
+
   // Menu screen
-  if (gameState === 'menu') {
+  if (view === 'menu') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-900 via-indigo-900 to-purple-900 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0f0f17] flex flex-col items-center justify-center p-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -174,15 +216,15 @@ export default function ClassClashPage() {
           <motion.div
             animate={{ y: [0, -10, 0] }}
             transition={{ repeat: Infinity, duration: 2 }}
-            className="w-28 h-28 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-2xl shadow-blue-500/50"
+            className="w-28 h-28 mx-auto mb-6 rounded-2xl bg-blue-500/20 border-2 border-blue-500/50 flex items-center justify-center"
           >
-            <School size={56} className="text-white" />
+            <School size={56} className="text-blue-400" />
           </motion.div>
 
           <h1 className="text-4xl font-black text-white mb-2">CLASS CLASH</h1>
-          <p className="text-white/60 mb-2">Compete for your class!</p>
+          <p className="text-gray-400 mb-2">Compete for your class!</p>
 
-          <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full">
+          <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full">
             <span className={`text-sm font-semibold ${
               difficultyInfo.level === 'KS3' ? 'text-green-400' :
               difficultyInfo.level === 'GCSE' ? 'text-yellow-400' :
@@ -191,7 +233,7 @@ export default function ClassClashPage() {
               {difficultyInfo.label}
             </span>
             {yearGroup && (
-              <span className="text-white/40 text-sm">| Year {yearGroup}</span>
+              <span className="text-gray-500 text-sm">| Year {yearGroup}</span>
             )}
           </div>
 
@@ -199,7 +241,7 @@ export default function ClassClashPage() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setGameState('select-class')}
+              onClick={() => setView('select-class')}
               className="w-full py-4 px-6 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl font-bold text-white shadow-lg flex items-center justify-center gap-3"
             >
               <Target size={24} />
@@ -209,8 +251,8 @@ export default function ClassClashPage() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setGameState('leaderboard')}
-              className="w-full py-4 px-6 bg-white/10 rounded-2xl font-bold text-white flex items-center justify-center gap-3"
+              onClick={() => setView('leaderboard')}
+              className="w-full py-4 px-6 bg-white/5 border border-white/10 rounded-2xl font-bold text-white flex items-center justify-center gap-3"
             >
               <TrendingUp size={24} />
               VIEW LEADERBOARD
@@ -219,7 +261,7 @@ export default function ClassClashPage() {
 
           <button
             onClick={() => router.push('/')}
-            className="mt-8 text-white/60 hover:text-white"
+            className="mt-8 text-gray-500 hover:text-white transition-colors"
           >
             Back to Home
           </button>
@@ -229,38 +271,36 @@ export default function ClassClashPage() {
   }
 
   // Select class screen
-  if (gameState === 'select-class') {
-    const classes = ['10A', '10B', '10C', '10D', '11A', '11B', '11C', '11D', '9A', '9B', '9C'];
-
+  if (view === 'select-class') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-900 via-indigo-900 to-purple-900 p-6">
+      <div className="min-h-screen bg-[#0f0f17] p-6">
         <button
-          onClick={() => setGameState('menu')}
-          className="absolute top-4 left-4 p-2 text-white/60 hover:text-white"
+          onClick={() => setView('menu')}
+          className="absolute top-4 left-4 p-2 text-gray-500 hover:text-white transition-colors"
         >
           <X size={24} />
         </button>
 
         <div className="max-w-md mx-auto pt-12">
           <h2 className="text-2xl font-bold text-white text-center mb-2">Select Your Class</h2>
-          <p className="text-white/60 text-center mb-8">Your score will contribute to your class total</p>
+          <p className="text-gray-400 text-center mb-8">Your score will contribute to your class total</p>
 
           <div className="grid grid-cols-3 gap-3">
-            {classes.map((cls) => (
+            {CLASSES.map((cls) => (
               <motion.button
                 key={cls}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => selectClass(cls)}
-                className="p-4 bg-white/10 rounded-xl font-bold text-white hover:bg-white/20 transition-colors"
+                className="p-4 bg-white/5 border border-white/10 rounded-xl font-bold text-white hover:bg-white/10 transition-colors"
               >
                 {cls}
               </motion.button>
             ))}
           </div>
 
-          <div className="mt-8 p-4 bg-white/10 rounded-xl">
-            <p className="text-white/60 text-sm text-center">
+          <div className="mt-8 p-4 bg-white/5 border border-white/10 rounded-xl">
+            <p className="text-gray-400 text-sm text-center">
               Don't see your class? Ask your teacher to create one!
             </p>
           </div>
@@ -270,12 +310,12 @@ export default function ClassClashPage() {
   }
 
   // Leaderboard screen
-  if (gameState === 'leaderboard') {
+  if (view === 'leaderboard') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-900 via-indigo-900 to-purple-900 p-6">
+      <div className="min-h-screen bg-[#0f0f17] p-6">
         <button
-          onClick={() => setGameState('menu')}
-          className="absolute top-4 left-4 p-2 text-white/60 hover:text-white"
+          onClick={() => setView('menu')}
+          className="absolute top-4 left-4 p-2 text-gray-500 hover:text-white transition-colors"
         >
           <X size={24} />
         </button>
@@ -293,18 +333,21 @@ export default function ClassClashPage() {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.1 }}
-                className={`p-4 rounded-xl bg-white/10 flex items-center gap-4 ${i === 0 ? 'ring-2 ring-yellow-500' : ''}`}
+                className={cn(
+                  'p-4 rounded-xl bg-white/5 border flex items-center gap-4',
+                  i === 0 ? 'border-yellow-500/50' : 'border-white/10'
+                )}
               >
                 <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${cls.color} flex items-center justify-center font-black text-white`}>
                   {i === 0 ? <Crown size={24} /> : i === 1 ? <Medal size={24} /> : i === 2 ? <Medal size={24} /> : i + 1}
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-white">Class {cls.name}</h3>
-                  <p className="text-white/60 text-sm">{cls.members} students</p>
+                  <p className="text-gray-500 text-sm">{cls.members} students</p>
                 </div>
                 <div className="text-right">
                   <p className="font-bold text-yellow-400">{cls.score.toLocaleString()}</p>
-                  <p className="text-white/60 text-xs">points</p>
+                  <p className="text-gray-500 text-xs">points</p>
                 </div>
               </motion.div>
             ))}
@@ -313,7 +356,7 @@ export default function ClassClashPage() {
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setGameState('select-class')}
+            onClick={() => setView('select-class')}
             className="w-full mt-8 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl font-bold text-white"
           >
             JOIN THE BATTLE
@@ -323,184 +366,223 @@ export default function ClassClashPage() {
     );
   }
 
-  // Results screen
-  if (gameState === 'results') {
-    const accuracy = Math.round((correctAnswers / questions.length) * 100);
-
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-900 via-indigo-900 to-purple-900 flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-md w-full"
-        >
-          <motion.div
-            initial={{ scale: 0, rotate: -180 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ type: 'spring' }}
-            className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-2xl"
-          >
-            <Trophy size={48} className="text-white" />
-          </motion.div>
-
-          <h1 className="text-3xl font-black text-white mb-2">CHALLENGE COMPLETE!</h1>
-          <p className="text-white/60 mb-2">Class {selectedClass}</p>
-
-          <div className="bg-white/10 rounded-xl p-3 mb-6 inline-block">
-            <p className="text-white/60 text-xs">YOUR CLASS CODE</p>
-            <div className="flex items-center gap-2">
-              <p className="font-mono font-bold text-white">{classCode}</p>
-              <button onClick={copyCode} className="text-white/60 hover:text-white">
-                {copied ? <Check size={16} /> : <Copy size={16} />}
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="bg-white/10 rounded-xl p-4">
-              <p className="text-3xl font-black text-yellow-400">{score}</p>
-              <p className="text-xs text-white/60">POINTS</p>
-            </div>
-            <div className="bg-white/10 rounded-xl p-4">
-              <p className="text-3xl font-black text-green-400">{correctAnswers}/{questions.length}</p>
-              <p className="text-xs text-white/60">CORRECT</p>
-            </div>
-            <div className="bg-white/10 rounded-xl p-4">
-              <p className="text-3xl font-black text-blue-400">{accuracy}%</p>
-              <p className="text-xs text-white/60">ACCURACY</p>
-            </div>
-          </div>
-
-          <p className="text-white/80 mb-6 bg-green-500/20 rounded-xl p-3">
-            +{score} points added to Class {selectedClass}!
-          </p>
-
-          <div className="space-y-3">
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={startGame}
-              className="w-full py-4 font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              PLAY AGAIN
-            </motion.button>
-            <button
-              onClick={() => setGameState('leaderboard')}
-              className="w-full py-4 font-bold text-white/80 bg-white/10 rounded-xl flex items-center justify-center gap-2"
-            >
-              <TrendingUp size={20} />
-              VIEW LEADERBOARD
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full py-4 font-bold text-white/60 bg-white/5 rounded-xl flex items-center justify-center gap-2"
-            >
-              <Home size={20} />
-              HOME
-            </button>
-          </div>
-        </motion.div>
+  // Game view using GameFrame
+  // Custom ready content with class info
+  const readyContent = (
+    <div className="flex flex-col items-center justify-center h-full p-6">
+      <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6 text-center">
+        <p className="text-gray-400 text-sm">Playing for</p>
+        <p className="text-2xl font-bold text-white">Class {selectedClass}</p>
       </div>
-    );
-  }
 
-  // Playing screen
-  const question = questions[currentQuestion];
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-900 via-indigo-900 to-purple-900 flex flex-col">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 bg-black/30">
-        <button onClick={() => router.push('/')} className="p-2 text-white/60">
-          <X size={24} />
-        </button>
-
-        <div className="text-center">
-          <p className="text-xs text-white/60">Class {selectedClass}</p>
-          <p className="font-bold text-white">Q{currentQuestion + 1}/{questions.length}</p>
+      <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6 text-center">
+        <p className="text-gray-400 text-xs mb-1">YOUR CLASS CODE</p>
+        <div className="flex items-center justify-center gap-2">
+          <p className="font-mono font-bold text-white">{classCode}</p>
+          <button onClick={copyCode} className="text-gray-400 hover:text-white transition-colors">
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+          </button>
         </div>
+      </div>
 
-        <div className="flex items-center gap-2 px-3 py-1 bg-yellow-500/20 rounded-xl">
-          <Zap size={16} className="text-yellow-400" />
-          <span className="font-bold text-yellow-400">{score}</span>
-        </div>
-      </header>
+      <div className="flex items-center gap-2 text-gray-400 mb-4">
+        <Users size={20} />
+        <span>10 questions | {GAME_TIME} seconds</span>
+      </div>
+    </div>
+  );
 
-      {/* Streak indicator */}
-      {streak > 1 && (
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mx-4 mt-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl text-center"
-        >
-          <span className="font-bold text-white">🔥 {streak} STREAK! +{Math.min(streak * 10, 50)} bonus</span>
-        </motion.div>
+  // Custom playing content
+  const playingContent = (
+    <div style={shakeStyle} className="h-full flex flex-col">
+      {/* Question counter */}
+      <div className="text-center mb-4">
+        <span className="text-gray-400 text-sm">
+          Question {currentQuestionIndex + 1} of {questions.length}
+        </span>
+      </div>
+
+      {/* Question card */}
+      {currentQuestion && (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentQuestionIndex}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="flex-1 flex flex-col"
+          >
+            {/* Question */}
+            <div className="bg-white/5 border border-white/10 backdrop-blur rounded-2xl p-6 mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs text-gray-400 bg-white/5 px-2 py-1 rounded-full">
+                  {currentQuestion.subject}
+                </span>
+                <span className={cn(
+                  'text-xs px-2 py-1 rounded-full',
+                  currentQuestion.difficulty === 'easy' ? 'bg-green-500/20 text-green-400' :
+                  currentQuestion.difficulty === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                  'bg-red-500/20 text-red-400'
+                )}>
+                  {currentQuestion.points} pts
+                </span>
+              </div>
+              <p className="text-xl font-bold text-white">{currentQuestion.question}</p>
+            </div>
+
+            {/* Options */}
+            <div className="grid grid-cols-1 gap-3">
+              {currentQuestion.options.map((option, i) => {
+                const isSelected = selectedAnswer === i;
+                const isCorrectAnswer = i === currentQuestion.correctIndex;
+
+                return (
+                  <motion.button
+                    key={i}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    whileHover={!showFeedback ? { scale: 1.02 } : {}}
+                    whileTap={!showFeedback ? { scale: 0.98 } : {}}
+                    onClick={() => handleAnswer(i)}
+                    disabled={showFeedback}
+                    className={cn(
+                      'p-4 rounded-xl border-2 text-white font-semibold text-left transition-all',
+                      showFeedback
+                        ? isCorrectAnswer
+                          ? 'bg-green-500/20 border-green-500 text-green-400'
+                          : isSelected
+                            ? 'bg-red-500/20 border-red-500 text-red-400'
+                            : 'bg-white/5 border-white/10 text-gray-400'
+                        : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-blue-500/50'
+                    )}
+                  >
+                    {option}
+                  </motion.button>
+                );
+              })}
+            </div>
+          </motion.div>
+        </AnimatePresence>
       )}
 
-      {/* Question */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-6">
-        <motion.div
-          key={currentQuestion}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md"
-        >
-          <div className="bg-white/10 backdrop-blur rounded-2xl p-6 mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs text-white/60 bg-white/10 px-2 py-1 rounded-full">{question?.subject}</span>
-              <span className={`text-xs px-2 py-1 rounded-full ${
-                question?.difficulty === 'easy' ? 'bg-green-500/20 text-green-400' :
-                question?.difficulty === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
-                'bg-red-500/20 text-red-400'
-              }`}>{question?.points} pts</span>
-            </div>
-            <p className="text-xl font-bold text-white">{question?.question}</p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            {question?.options.map((option, i) => {
-              let buttonClass = 'bg-white/10 border-white/20 hover:bg-white/15';
-              if (showResult) {
-                if (i === question.correctIndex) {
-                  buttonClass = 'bg-green-500/30 border-green-500';
-                } else if (i === selectedAnswer && i !== question.correctIndex) {
-                  buttonClass = 'bg-red-500/30 border-red-500';
-                }
-              }
-
-              return (
-                <motion.button
-                  key={i}
-                  whileHover={!showResult ? { scale: 1.02 } : {}}
-                  whileTap={!showResult ? { scale: 0.98 } : {}}
-                  onClick={() => handleAnswer(i)}
-                  disabled={showResult}
-                  className={`p-4 rounded-xl border-2 text-white font-semibold text-left transition-all ${buttonClass}`}
-                >
-                  {option}
-                </motion.button>
-              );
-            })}
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Progress */}
-      <div className="px-4 py-3">
+      {/* Progress bar */}
+      <div className="mt-4">
         <div className="flex gap-1">
           {questions.map((_, i) => (
             <div
               key={i}
-              className={`flex-1 h-2 rounded-full ${
-                i < currentQuestion ? 'bg-blue-500' :
-                i === currentQuestion ? 'bg-blue-400' :
-                'bg-white/20'
-              }`}
+              className={cn(
+                'flex-1 h-2 rounded-full',
+                i < currentQuestionIndex ? 'bg-blue-500' :
+                i === currentQuestionIndex ? 'bg-blue-400' :
+                'bg-white/10'
+              )}
             />
           ))}
         </div>
       </div>
     </div>
+  );
+
+  // Custom finished content (class-specific results)
+  const finishedContent = (
+    <div className="flex-1 flex flex-col items-center justify-center p-6">
+      <motion.div
+        initial={{ scale: 0, rotate: -180 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: 'spring' }}
+        className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-6"
+      >
+        <Trophy size={48} className="text-white" />
+      </motion.div>
+
+      <h1 className="text-3xl font-black text-white mb-2">CHALLENGE COMPLETE!</h1>
+      <p className="text-gray-400 mb-2">Class {selectedClass}</p>
+
+      <div className="bg-white/5 border border-white/10 rounded-xl p-3 mb-6 inline-block">
+        <p className="text-gray-400 text-xs">YOUR CLASS CODE</p>
+        <div className="flex items-center gap-2">
+          <p className="font-mono font-bold text-white">{classCode}</p>
+          <button onClick={copyCode} className="text-gray-400 hover:text-white transition-colors">
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4 mb-8 w-full max-w-sm">
+        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+          <p className="text-3xl font-black text-yellow-400">{scoring.score}</p>
+          <p className="text-xs text-gray-500">POINTS</p>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+          <p className="text-3xl font-black text-green-400">{scoring.correctAnswers}/{questions.length}</p>
+          <p className="text-xs text-gray-500">CORRECT</p>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+          <p className="text-3xl font-black text-blue-400">{scoring.accuracy}%</p>
+          <p className="text-xs text-gray-500">ACCURACY</p>
+        </div>
+      </div>
+
+      <p className="text-gray-300 mb-6 bg-green-500/10 border border-green-500/30 rounded-xl p-3">
+        +{scoring.score} points added to Class {selectedClass}!
+      </p>
+
+      <div className="space-y-3 w-full max-w-sm">
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleRestart}
+          className="w-full py-4 font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center gap-2"
+        >
+          Play Again
+        </motion.button>
+        <button
+          onClick={() => setView('leaderboard')}
+          className="w-full py-4 font-bold text-gray-300 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 hover:bg-white/10 transition-colors"
+        >
+          <TrendingUp size={20} />
+          VIEW LEADERBOARD
+        </button>
+        <button
+          onClick={() => router.push('/')}
+          className="w-full py-4 font-bold text-gray-500 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-2 hover:bg-white/10 transition-colors"
+        >
+          HOME
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+
+      {gameState === 'finished' ? (
+        <div className="min-h-screen bg-[#0f0f17] flex flex-col">
+          {finishedContent}
+        </div>
+      ) : (
+        <GameFrame
+          title="Class Clash"
+          subtitle={`Playing for Class ${selectedClass}`}
+          icon={<School size={40} className="text-blue-400" />}
+          color="blue"
+          gameState={gameState}
+          onStart={handleStart}
+          onRestart={handleRestart}
+          onClose={() => setView('menu')}
+          time={timer.time}
+          totalTime={GAME_TIME}
+          score={scoring.score}
+          combo={scoring.combo}
+          stats={stats}
+        >
+          {gameState === 'ready' && readyContent}
+          {gameState === 'playing' && playingContent}
+        </GameFrame>
+      )}
+    </>
   );
 }

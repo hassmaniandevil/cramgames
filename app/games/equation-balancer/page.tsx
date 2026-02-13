@@ -1,21 +1,26 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
+import { useState, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
-  X,
-  Zap,
-  Trophy,
-  RotateCcw,
-  Home,
   Scale,
   CheckCircle,
   XCircle,
   ArrowRight,
+  Lightbulb,
 } from 'lucide-react';
+import {
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
 
 interface Equation {
   id: string;
@@ -203,31 +208,58 @@ function generateQuestion(usedIds: Set<string>, filteredEquations: Equation[]): 
   };
 }
 
+const TOTAL_TIME = 120; // 2 minutes for the game
+
 export default function EquationBalancerPage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
 
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'complete'>('ready');
+  // Get difficulty based on year group
+  const yearGroup = profile?.yearGroup ?? 10;
+  const difficultyLevel = useMemo(() => getDifficultyFromYearGroup(yearGroup), [yearGroup]);
+  const allowedDifficulties = useMemo(() => getEquationDifficultyFilter(difficultyLevel), [difficultyLevel]);
+  const filteredEquations = useMemo(
+    () => equations.filter(eq => allowedDifficulties.includes(eq.difficulty)),
+    [allowedDifficulties]
+  );
+
+  const totalQuestions = Math.min(8, filteredEquations.length);
+
+  // Game framework hooks
+  const { gameState, isPlaying, startGame: startGameState, finishGame, resetGame } = useGameState();
+  const {
+    score,
+    combo,
+    maxCombo,
+    correctAnswers,
+    wrongAnswers,
+    accuracy,
+    xpEarned,
+    isPerfect,
+    recordCorrect,
+    recordWrong,
+    reset: resetScore,
+  } = useGameScore({ basePointsPerQuestion: 100 });
+  const { playCorrect, playWrong } = useGameAudio();
+  const { shake } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  // Timer hook
+  const { time, start: startTimer, reset: resetTimer } = useGameTimer({
+    initialTime: TOTAL_TIME,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+
+  // Game-specific state
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
   const [question, setQuestion] = useState<Question | null>(null);
   const [usedIds, setUsedIds] = useState<Set<string>>(new Set());
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [showHint, setShowHint] = useState(false);
-  const [correctCount, setCorrectCount] = useState(0);
 
-  // Get difficulty based on year group
-  const yearGroup = profile?.yearGroup ?? 10;
-  const difficultyLevel = getDifficultyFromYearGroup(yearGroup);
-  const allowedDifficulties = getEquationDifficultyFilter(difficultyLevel);
-  const filteredEquations = equations.filter(eq => allowedDifficulties.includes(eq.difficulty));
-
-  const totalQuestions = Math.min(8, filteredEquations.length);
-
-  const loadQuestion = () => {
+  const loadQuestion = useCallback(() => {
     const q = generateQuestion(usedIds, filteredEquations);
     if (q) {
       setQuestion(q);
@@ -240,14 +272,35 @@ export default function EquationBalancerPage() {
       setShowResult(false);
       setShowHint(false);
     }
-  };
+  }, [usedIds, filteredEquations]);
 
-  const startGame = () => {
-    setGameState('playing');
-    loadQuestion();
-  };
+  const handleStart = useCallback(() => {
+    resetScore();
+    resetTimer();
+    setCurrentIndex(0);
+    setUsedIds(new Set());
+    setQuestion(null);
+    setSelectedAnswer(null);
+    setShowResult(false);
+    setShowHint(false);
+    startGameState();
+    startTimer();
+    // Load first question after state is ready
+    setTimeout(() => {
+      const q = generateQuestion(new Set(), filteredEquations);
+      if (q) {
+        setQuestion(q);
+        setUsedIds(new Set([q.equation.id]));
+      }
+    }, 0);
+  }, [resetScore, resetTimer, startGameState, startTimer, filteredEquations]);
 
-  const handleAnswer = (answer: string) => {
+  const handleRestart = useCallback(() => {
+    resetGame();
+    handleStart();
+  }, [resetGame, handleStart]);
+
+  const handleAnswer = useCallback((answer: string) => {
     if (showResult || !question) return;
 
     setSelectedAnswer(answer);
@@ -257,312 +310,212 @@ export default function EquationBalancerPage() {
     setIsCorrect(correct);
 
     if (correct) {
-      const points = showHint ? 10 : 20;
-      setScore(s => s + points);
-      setCorrectCount(c => c + 1);
-      addXP(points);
+      // Hint penalty reduces points
+      const timeBonus = showHint ? -50 : 0;
+      recordCorrect(timeBonus);
+      playCorrect(combo + 1);
+      emitCorrect();
+    } else {
+      recordWrong();
+      playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
     }
-  };
+  }, [showResult, question, showHint, combo, recordCorrect, recordWrong, playCorrect, playWrong, shake, emitCorrect, emitWrong]);
 
-  const nextQuestion = () => {
+  const nextQuestion = useCallback(() => {
     if (currentIndex < totalQuestions - 1) {
       setCurrentIndex(prev => prev + 1);
       loadQuestion();
     } else {
-      setGameState('complete');
+      finishGame();
     }
+  }, [currentIndex, totalQuestions, loadQuestion, finishGame]);
+
+  // Build stats object for GameFrame
+  const stats = {
+    score,
+    correctAnswers,
+    wrongAnswers,
+    combo,
+    maxCombo,
+    accuracy,
+    xpEarned,
+    isPerfect,
   };
-
-  const resetGame = () => {
-    setCurrentIndex(0);
-    setScore(0);
-    setUsedIds(new Set());
-    setCorrectCount(0);
-    setQuestion(null);
-    setGameState('ready');
-  };
-
-  // Ready screen - show difficulty level
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-purple flex items-center justify-center"
-          >
-            <Scale size={40} className="text-accent" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            Equation Balancer
-          </h1>
-          <p className="text-text-secondary mb-4">
-            Balance chemical equations by choosing the correct coefficients
-          </p>
-
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-surface-elevated rounded-full mb-6">
-            <span className="text-sm text-text-muted">Difficulty:</span>
-            <span className={`font-bold ${
-              difficultyLevel === 'KS3' ? 'text-green-400' :
-              difficultyLevel === 'GCSE' ? 'text-amber-400' :
-              'text-red-400'
-            }`}>
-              {difficultyLevel}
-            </span>
-            <span className="text-xs text-text-muted">(Year {yearGroup})</span>
-          </div>
-
-          <div className="text-sm text-text-muted mb-6">
-            {difficultyLevel === 'KS3' && 'Simple equations with basic coefficients'}
-            {difficultyLevel === 'GCSE' && 'Includes combustion and displacement reactions'}
-            {difficultyLevel === 'A-Level' && 'Complex equations with larger coefficients'}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-accent">{totalQuestions}</div>
-              <div className="text-xs text-text-muted">Questions</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-xp">{totalQuestions * 20}</div>
-              <div className="text-xs text-text-muted">Max XP</div>
-            </div>
-          </div>
-
-          <button
-            onClick={startGame}
-            className="w-full btn-primary flex items-center justify-center gap-2"
-          >
-            <Zap size={20} />
-            Start Game
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Complete screen
-  if (gameState === 'complete') {
-    const accuracy = Math.round((correctCount / totalQuestions) * 100);
-
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-yellow flex items-center justify-center"
-          >
-            <Trophy size={40} className="text-amber-500" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            Equations Balanced!
-          </h1>
-          <p className="text-text-secondary mb-6">
-            Great chemistry skills!
-          </p>
-
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-xp">{score}</div>
-              <div className="text-xs text-text-muted">XP Earned</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-correct">{accuracy}%</div>
-              <div className="text-xs text-text-muted">Accuracy</div>
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-text-secondary">Equations balanced</span>
-              <span className="font-bold text-text-primary">{correctCount}/{totalQuestions}</span>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={resetGame}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              Play Again
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full card p-4 text-text-primary font-semibold flex items-center justify-center gap-2 hover:bg-surface-elevated transition-colors"
-            >
-              <Home size={20} />
-              Home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="glass sticky top-0 z-50 px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 hover:bg-surface-elevated rounded-lg transition-colors"
-          >
-            <X size={24} />
-          </button>
-          <div className="text-center">
-            <h1 className="font-bold text-text-primary">Equation Balancer</h1>
-            <p className="text-xs text-text-muted">{currentIndex + 1} of {totalQuestions}</p>
-          </div>
-          <div className="flex items-center gap-1">
-            <Zap size={18} className="text-xp" />
-            <span className="font-bold text-xp">{score}</span>
-          </div>
-        </div>
-      </header>
+    <>
+      {/* Particle effects layer */}
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
 
-      {/* Progress bar */}
-      <div className="max-w-2xl mx-auto px-4 pt-4">
-        <div className="h-2 bg-surface-elevated rounded-full overflow-hidden">
-          <motion.div
-            className="h-full bg-gradient-to-r from-accent to-purple-400"
-            initial={{ width: 0 }}
-            animate={{ width: `${((currentIndex + 1) / totalQuestions) * 100}%` }}
-          />
-        </div>
-      </div>
-
-      <main className="max-w-2xl mx-auto p-4 pb-32">
-        {question && (
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-          >
-            {/* Equation display */}
-            <div className="card p-6 mb-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Scale size={20} className="text-accent" />
-                <span className="text-sm px-2 py-1 bg-pastel-purple text-accent rounded-full">
-                  Chemistry
+      <GameFrame
+        title="Equation Balancer"
+        subtitle="Balance chemical equations by choosing the correct coefficients"
+        icon={<Scale size={40} className="text-purple-400" />}
+        color="purple"
+        gameState={gameState}
+        onStart={handleStart}
+        onRestart={handleRestart}
+        time={time}
+        totalTime={TOTAL_TIME}
+        score={score}
+        combo={combo}
+        stats={stats}
+      >
+        {/* Game content - only rendered when playing */}
+        {isPlaying && question && (
+          <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full">
+            {/* Progress indicator */}
+            <div className="mb-4">
+              <div className="flex justify-between text-sm text-gray-400 mb-2">
+                <span>Question {currentIndex + 1} of {totalQuestions}</span>
+                <span className={`font-medium ${
+                  difficultyLevel === 'KS3' ? 'text-green-400' :
+                  difficultyLevel === 'GCSE' ? 'text-amber-400' :
+                  'text-red-400'
+                }`}>
+                  {difficultyLevel}
                 </span>
               </div>
-
-              <h2 className="text-lg font-semibold text-text-primary mb-4">
-                Choose the correctly balanced equation:
-              </h2>
-
-              <div className="p-4 bg-surface-elevated rounded-xl text-center">
-                <p className="text-xl font-mono text-text-primary">
-                  {question.equation.unbalanced}
-                </p>
-                <p className="text-sm text-text-muted mt-2">Unbalanced equation</p>
+              <div className="h-2 bg-[#1a1a2e] rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-purple-500 to-purple-400"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${((currentIndex + 1) / totalQuestions) * 100}%` }}
+                />
               </div>
-
-              {!showResult && (
-                <button
-                  onClick={() => setShowHint(true)}
-                  className="mt-4 text-sm text-accent hover:underline"
-                >
-                  {showHint ? `Hint: ${question.equation.hint}` : 'Need a hint? (-10 XP if correct)'}
-                </button>
-              )}
             </div>
 
-            {/* Options */}
-            <div className="space-y-3">
-              {question.options.map((option, index) => {
-                const isSelected = selectedAnswer === option;
-                const isCorrectOption = option === question.correctAnswer;
-
-                let className = 'option-card justify-center font-mono text-base';
-                if (showResult) {
-                  if (isCorrectOption) className += ' correct';
-                  else if (isSelected) className += ' wrong';
-                }
-
-                return (
-                  <motion.button
-                    key={index}
-                    initial={{ x: -20, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    transition={{ delay: index * 0.1 }}
-                    onClick={() => handleAnswer(option)}
-                    className={className}
-                    disabled={showResult}
-                  >
-                    <span className="flex items-center gap-3">
-                      <span className="w-8 h-8 rounded-full bg-surface-elevated flex items-center justify-center text-sm font-bold">
-                        {String.fromCharCode(65 + index)}
-                      </span>
-                      {option}
-                    </span>
-                    {showResult && isCorrectOption && (
-                      <CheckCircle size={20} className="text-correct ml-auto" />
-                    )}
-                    {showResult && isSelected && !isCorrectOption && (
-                      <XCircle size={20} className="text-incorrect ml-auto" />
-                    )}
-                  </motion.button>
-                );
-              })}
-            </div>
-
-            {/* Result feedback */}
-            {showResult && (
+            <AnimatePresence mode="wait">
               <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="mt-6"
+                key={question.equation.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
               >
-                <div className={`card p-4 mb-4 ${isCorrect ? 'bg-pastel-green' : 'bg-pastel-pink'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    {isCorrect ? (
-                      <CheckCircle size={20} className="text-correct" />
-                    ) : (
-                      <XCircle size={20} className="text-incorrect" />
-                    )}
-                    <span className="font-bold text-text-primary">
-                      {isCorrect ? `Correct! +${showHint ? 10 : 20} XP` : 'Not quite right'}
+                {/* Equation display */}
+                <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 mb-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Scale size={20} className="text-purple-400" />
+                    <span className="text-sm px-2 py-1 bg-purple-500/20 text-purple-400 rounded-full border border-purple-500/30">
+                      Chemistry
                     </span>
                   </div>
-                  <p className="text-sm text-text-secondary">
-                    {question.equation.hint}
-                  </p>
+
+                  <h2 className="text-lg font-semibold text-white mb-4">
+                    Choose the correctly balanced equation:
+                  </h2>
+
+                  <div className="p-4 bg-[#0f0f17] rounded-xl text-center border border-white/5">
+                    <p className="text-xl font-mono text-white">
+                      {question.equation.unbalanced}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-2">Unbalanced equation</p>
+                  </div>
+
+                  {!showResult && (
+                    <button
+                      onClick={() => setShowHint(true)}
+                      className="mt-4 text-sm text-purple-400 hover:text-purple-300 hover:underline flex items-center gap-1 transition-colors"
+                    >
+                      <Lightbulb size={14} />
+                      {showHint ? `Hint: ${question.equation.hint}` : 'Need a hint? (-50 points if correct)'}
+                    </button>
+                  )}
                 </div>
 
-                <button
-                  onClick={nextQuestion}
-                  className="w-full btn-primary py-4 flex items-center justify-center gap-2"
-                >
-                  {currentIndex < totalQuestions - 1 ? (
-                    <>
-                      Next Equation
-                      <ArrowRight size={20} />
-                    </>
-                  ) : (
-                    'See Results'
-                  )}
-                </button>
+                {/* Options */}
+                <div className="space-y-3">
+                  {question.options.map((option, index) => {
+                    const isSelected = selectedAnswer === option;
+                    const isCorrectOption = option === question.correctAnswer;
+
+                    let bgClass = 'bg-[#1a1a2e] border-white/10 hover:bg-[#252538] hover:border-purple-500/50';
+                    if (showResult) {
+                      if (isCorrectOption) {
+                        bgClass = 'bg-green-500/20 border-green-500/50';
+                      } else if (isSelected) {
+                        bgClass = 'bg-red-500/20 border-red-500/50';
+                      } else {
+                        bgClass = 'bg-[#1a1a2e] border-white/10 opacity-50';
+                      }
+                    }
+
+                    return (
+                      <motion.button
+                        key={index}
+                        initial={{ x: -20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: index * 0.1 }}
+                        onClick={() => handleAnswer(option)}
+                        className={`w-full p-4 rounded-xl border flex items-center justify-between font-mono text-base transition-all ${bgClass}`}
+                        disabled={showResult}
+                      >
+                        <span className="flex items-center gap-3">
+                          <span className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-sm font-bold text-white">
+                            {String.fromCharCode(65 + index)}
+                          </span>
+                          <span className="text-white">{option}</span>
+                        </span>
+                        {showResult && isCorrectOption && (
+                          <CheckCircle size={20} className="text-green-400" />
+                        )}
+                        {showResult && isSelected && !isCorrectOption && (
+                          <XCircle size={20} className="text-red-400" />
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+
+                {/* Result feedback */}
+                {showResult && (
+                  <motion.div
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="mt-6"
+                  >
+                    <div className={`rounded-xl p-4 mb-4 border ${
+                      isCorrect
+                        ? 'bg-green-500/10 border-green-500/30'
+                        : 'bg-red-500/10 border-red-500/30'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        {isCorrect ? (
+                          <CheckCircle size={20} className="text-green-400" />
+                        ) : (
+                          <XCircle size={20} className="text-red-400" />
+                        )}
+                        <span className={`font-bold ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                          {isCorrect ? `Correct! +${showHint ? 50 : 100} points` : 'Not quite right'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-400">
+                        {question.equation.hint}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={nextQuestion}
+                      className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:from-purple-400 hover:to-purple-500 transition-all"
+                    >
+                      {currentIndex < totalQuestions - 1 ? (
+                        <>
+                          Next Equation
+                          <ArrowRight size={20} />
+                        </>
+                      ) : (
+                        'See Results'
+                      )}
+                    </button>
+                  </motion.div>
+                )}
               </motion.div>
-            )}
-          </motion.div>
+            </AnimatePresence>
+          </div>
         )}
-      </main>
-    </div>
+      </GameFrame>
+    </>
   );
 }

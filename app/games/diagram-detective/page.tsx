@@ -1,21 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore } from '@/lib/stores/userStore';
+import { Search, CheckCircle, XCircle, ArrowRight } from 'lucide-react';
 import {
-  X,
-  Zap,
-  Trophy,
-  RotateCcw,
-  Home,
-  Search,
-  CheckCircle,
-  XCircle,
-  ArrowRight,
-} from 'lucide-react';
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
+import { cn } from '@/lib/utils/cn';
 
 interface DiagramPart {
   id: string;
@@ -215,68 +215,97 @@ function generateQuestion(diagram: Diagram, answeredParts: Set<string>): Questio
 }
 
 // Map year group to difficulty level
-function getDifficultyFromYearGroup(yearGroup: number): { level: string; label: string; color: string } {
+type DifficultyLevel = 'Primary' | 'KS3' | 'GCSE' | 'A-Level';
+
+function getDifficultyFromYearGroup(yearGroup: YearGroup | undefined): { level: DifficultyLevel; color: string } {
+  if (!yearGroup) return { level: 'GCSE', color: 'text-purple-400' };
   if (yearGroup <= 6) {
-    return { level: 'Primary', label: 'Primary', color: 'bg-green-500/20 text-green-400 border-green-500/30' };
+    return { level: 'Primary', color: 'text-green-400' };
   } else if (yearGroup <= 9) {
-    return { level: 'KS3', label: 'KS3', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+    return { level: 'KS3', color: 'text-blue-400' };
   } else if (yearGroup <= 11) {
-    return { level: 'GCSE', label: 'GCSE', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' };
+    return { level: 'GCSE', color: 'text-purple-400' };
   } else {
-    return { level: 'A-Level', label: 'A-Level', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+    return { level: 'A-Level', color: 'text-amber-400' };
   }
 }
 
+const partsPerDiagram = 3; // Ask about 3 parts per diagram
+
 export default function DiagramDetectivePage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
 
-  const yearGroup = profile?.yearGroup || 9;
-  const difficulty = getDifficultyFromYearGroup(yearGroup);
+  // Determine difficulty based on user's year group
+  const difficulty = useMemo(() => getDifficultyFromYearGroup(profile?.yearGroup), [profile?.yearGroup]);
 
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
+  // Game framework hooks
+  const { gameState, isPlaying, startGame, finishGame, resetGame } = useGameState();
+  const timer = useGameTimer({
+    initialTime: 120,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+  const scoring = useGameScore({ basePointsPerQuestion: 100 });
+  const audio = useGameAudio();
+  const { shake, shakeStyle } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  // Game-specific state
   const [diagramIndex, setDiagramIndex] = useState(0);
   const [answeredParts, setAnsweredParts] = useState<Set<string>>(new Set());
   const [question, setQuestion] = useState<Question | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
-  const [score, setScore] = useState(0);
-  const [totalCorrect, setTotalCorrect] = useState(0);
-  const [totalQuestions, setTotalQuestions] = useState(0);
-  const [gameComplete, setGameComplete] = useState(false);
 
   const currentDiagram = diagrams[diagramIndex];
-  const partsPerDiagram = 3; // Ask about 3 parts per diagram
 
-  const loadQuestion = () => {
+  // Load a new question for the current diagram
+  const loadQuestion = useCallback(() => {
     const q = generateQuestion(currentDiagram, answeredParts);
     if (q) {
       setQuestion(q);
       setSelectedAnswer(null);
       setShowResult(false);
     }
-  };
+  }, [currentDiagram, answeredParts]);
 
-  useEffect(() => {
-    loadQuestion();
-  }, [diagramIndex]);
+  // Handle game start
+  const handleStart = useCallback(() => {
+    startGame();
+    timer.reset(120);
+    timer.start();
+    scoring.reset();
+    setDiagramIndex(0);
+    setAnsweredParts(new Set());
+    // Question will be loaded by useEffect
+  }, [startGame, timer, scoring]);
 
-  const handleAnswer = (answer: string) => {
+  // Handle restart
+  const handleRestart = useCallback(() => {
+    resetGame();
+    setTimeout(handleStart, 100);
+  }, [resetGame, handleStart]);
+
+  // Handle answer selection
+  const handleAnswer = useCallback((answer: string) => {
     if (showResult || !question) return;
 
     setSelectedAnswer(answer);
     setShowResult(true);
-    setTotalQuestions(t => t + 1);
 
     const correct = answer === question.targetPart.name;
     setIsCorrect(correct);
 
     if (correct) {
-      setScore(s => s + 15);
-      setTotalCorrect(c => c + 1);
-      addXP(15);
+      scoring.recordCorrect();
+      audio.playCorrect(scoring.combo);
+      emitCorrect();
+    } else {
+      scoring.recordWrong();
+      audio.playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
     }
 
     setAnsweredParts(prev => {
@@ -284,357 +313,246 @@ export default function DiagramDetectivePage() {
       newSet.add(question.targetPart.id);
       return newSet;
     });
-  };
+  }, [showResult, question, scoring, audio, shake, emitCorrect, emitWrong]);
 
-  const nextQuestion = () => {
+  // Handle next question
+  const nextQuestion = useCallback(() => {
     if (answeredParts.size >= partsPerDiagram) {
       // Move to next diagram
       if (diagramIndex < diagrams.length - 1) {
         setDiagramIndex(prev => prev + 1);
         setAnsweredParts(new Set());
       } else {
-        setGameComplete(true);
-        setGameState('finished');
+        // Game complete
+        timer.pause();
+        finishGame();
       }
     } else {
       loadQuestion();
     }
+  }, [answeredParts.size, diagramIndex, timer, finishGame, loadQuestion]);
+
+  // Load question when diagram changes or game starts
+  useEffect(() => {
+    if (isPlaying && !question) {
+      loadQuestion();
+    }
+  }, [isPlaying, question, loadQuestion]);
+
+  // Load new question when diagram index changes
+  useEffect(() => {
+    if (isPlaying) {
+      loadQuestion();
+    }
+  }, [diagramIndex, isPlaying]);
+
+  // Calculate stats for results
+  const stats = {
+    score: scoring.score,
+    correctAnswers: scoring.correctAnswers,
+    wrongAnswers: scoring.wrongAnswers,
+    combo: scoring.combo,
+    maxCombo: scoring.maxCombo,
+    accuracy: scoring.accuracy,
+    xpEarned: scoring.xpEarned,
+    isPerfect: scoring.isPerfect,
   };
 
-  const resetGame = () => {
-    setDiagramIndex(0);
-    setAnsweredParts(new Set());
-    setScore(0);
-    setTotalCorrect(0);
-    setTotalQuestions(0);
-    setGameComplete(false);
-    setGameState('playing');
-    loadQuestion();
+  // Get subject color
+  const getSubjectBgColor = (subject: string) => {
+    switch (subject) {
+      case 'Biology': return 'bg-green-500/20 text-green-400 border-green-500/30';
+      case 'Physics': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'Chemistry': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+      default: return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+    }
   };
-
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-sm w-full"
-        >
-          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
-            <Search size={48} className="text-white" />
-          </div>
-
-          <h1 className="text-3xl font-bold text-text-primary mb-2">
-            Diagram Detective
-          </h1>
-          <p className="text-text-secondary mb-6">
-            Can you identify the parts of scientific diagrams?
-          </p>
-
-          {/* Difficulty badge */}
-          <div className="flex justify-center mb-6">
-            <span className={`px-4 py-2 rounded-full text-sm font-bold border ${difficulty.color}`}>
-              {difficulty.label} Level
-            </span>
-          </div>
-
-          {/* Settings display */}
-          <div className="card p-4 mb-6">
-            <span className="text-sm text-text-muted block mb-3">Your Settings</span>
-            <div className="space-y-2 text-left">
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Year Group:</span>
-                <span className="text-text-primary font-medium">Year {yearGroup}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Difficulty:</span>
-                <span className={`font-medium ${difficulty.color.split(' ')[1]}`}>{difficulty.label}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Diagrams:</span>
-                <span className="text-text-primary font-medium">{diagrams.length} to complete</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Parts per diagram:</span>
-                <span className="text-text-primary font-medium">{partsPerDiagram}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="card p-4 text-center">
-              <Search size={24} className="text-purple-400 mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Identify</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Zap size={24} className="text-xp mx-auto mb-2" />
-              <p className="text-sm text-text-muted">+15 XP</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Trophy size={24} className="text-pink-400 mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Master</p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setGameState('playing')}
-            className="w-full btn-primary py-4 text-lg font-bold"
-          >
-            Start Game
-          </button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Complete screen
-  if (gameComplete) {
-    const accuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
-
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-pink flex items-center justify-center"
-          >
-            <Trophy size={40} className="text-pink-500" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            Diagram Expert!
-          </h1>
-          <p className="text-text-secondary mb-4">
-            Great knowledge of scientific diagrams!
-          </p>
-
-          {/* Difficulty badge */}
-          <div className="flex justify-center mb-6">
-            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${difficulty.color}`}>
-              {difficulty.label} Level
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-xp">{score}</div>
-              <div className="text-xs text-text-muted">XP Earned</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-correct">{accuracy}%</div>
-              <div className="text-xs text-text-muted">Accuracy</div>
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-text-secondary">Parts labelled correctly</span>
-              <span className="font-bold text-text-primary">{totalCorrect}/{totalQuestions}</span>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={resetGame}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              Play Again
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full card p-4 text-text-primary font-semibold flex items-center justify-center gap-2 hover:bg-surface-elevated transition-colors"
-            >
-              <Home size={20} />
-              Home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="glass sticky top-0 z-50 px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 hover:bg-surface-elevated rounded-lg transition-colors"
-          >
-            <X size={24} />
-          </button>
-          <div className="text-center">
-            <h1 className="font-bold text-text-primary">Diagram Detective</h1>
-            <p className="text-xs text-text-muted">Diagram {diagramIndex + 1} of {diagrams.length}</p>
-          </div>
-          <div className="flex items-center gap-1">
-            <Zap size={18} className="text-xp" />
-            <span className="font-bold text-xp">{score}</span>
-          </div>
-        </div>
-      </header>
+    <>
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
 
-      {/* Progress dots */}
-      <div className="max-w-2xl mx-auto px-4 pt-4">
-        <div className="flex justify-center gap-2">
-          {Array.from({ length: partsPerDiagram }).map((_, i) => (
-            <div
-              key={i}
-              className={`w-3 h-3 rounded-full transition-colors ${
-                i < answeredParts.size ? 'bg-correct' : 'bg-surface-elevated'
-              }`}
-            />
-          ))}
-        </div>
-      </div>
-
-      <main className="max-w-2xl mx-auto p-4 pb-32">
-        {question && (
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-          >
-            {/* Diagram card */}
-            <div className="card p-6 mb-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Search size={20} className="text-accent" />
-                <span className={`text-sm px-2 py-1 rounded-full ${
-                  currentDiagram.subject === 'Biology' ? 'bg-pastel-green text-correct' :
-                  currentDiagram.subject === 'Physics' ? 'bg-pastel-blue text-blue-600' :
-                  'bg-pastel-yellow text-amber-600'
-                }`}>
-                  {currentDiagram.subject}
-                </span>
-                <span className={`text-sm px-2 py-1 rounded-full border ${difficulty.color}`}>
-                  {difficulty.label}
-                </span>
-              </div>
-
-              <h2 className="text-xl font-bold text-text-primary mb-2">
-                {currentDiagram.title}
-              </h2>
-
-              {/* ASCII Art Diagram */}
-              <div className="p-4 bg-surface-elevated rounded-xl mb-4 overflow-x-auto">
-                <pre className="text-xs sm:text-sm font-mono text-text-primary whitespace-pre leading-relaxed">
-                  {currentDiagram.asciiArt}
-                </pre>
-              </div>
-
-              {/* Question */}
-              <div className="p-4 bg-pastel-purple rounded-xl">
-                <p className="font-semibold text-text-primary text-center">
-                  What is the function of: <span className="text-accent">{question.targetPart.name}</span>?
-                </p>
-              </div>
-            </div>
-
-            {/* Options */}
-            <div className="space-y-3">
-              {question.options.map((option, index) => {
-                const isSelected = selectedAnswer === option;
-                const isCorrectOption = option === question.targetPart.name;
-                const optionPart = currentDiagram.parts.find(p => p.name === option);
-
-                let className = 'option-card text-left';
-                if (showResult) {
-                  if (isCorrectOption) className += ' correct';
-                  else if (isSelected) className += ' wrong';
-                }
-
-                return (
-                  <motion.button
-                    key={index}
-                    initial={{ x: -20, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    transition={{ delay: index * 0.1 }}
-                    onClick={() => handleAnswer(option)}
-                    className={className}
-                    disabled={showResult}
-                  >
-                    <span className="flex items-center gap-3 flex-1">
-                      <span className="w-8 h-8 rounded-full bg-surface-elevated flex items-center justify-center text-sm font-bold shrink-0">
-                        {String.fromCharCode(65 + index)}
-                      </span>
-                      <span className="text-left">{optionPart?.description || option}</span>
-                    </span>
-                    {showResult && isCorrectOption && (
-                      <CheckCircle size={20} className="text-correct shrink-0" />
-                    )}
-                    {showResult && isSelected && !isCorrectOption && (
-                      <XCircle size={20} className="text-incorrect shrink-0" />
-                    )}
-                  </motion.button>
-                );
-              })}
-            </div>
-
-            {/* Result feedback */}
-            <AnimatePresence>
-              {showResult && (
-                <motion.div
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  className="mt-6"
-                >
-                  <div className={`card p-4 mb-4 ${isCorrect ? 'bg-pastel-green' : 'bg-pastel-pink'}`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      {isCorrect ? (
-                        <CheckCircle size={20} className="text-correct" />
-                      ) : (
-                        <XCircle size={20} className="text-incorrect" />
+      <GameFrame
+        title="Diagram Detective"
+        subtitle="Can you identify the parts of scientific diagrams?"
+        icon={<Search size={40} className="text-purple-400" />}
+        color="purple"
+        gameState={gameState}
+        onStart={handleStart}
+        onRestart={handleRestart}
+        time={timer.time}
+        totalTime={120}
+        score={scoring.score}
+        combo={scoring.combo}
+        stats={stats}
+        zoneId="science-diagrams"
+      >
+        <div style={shakeStyle} className="h-full flex flex-col">
+          {question && (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`${question.diagram.id}-${question.targetPart.id}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
+                className="w-full max-w-2xl mx-auto"
+              >
+                {/* Progress dots */}
+                <div className="flex justify-center gap-2 mb-4">
+                  {Array.from({ length: partsPerDiagram }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        'w-3 h-3 rounded-full transition-colors',
+                        i < answeredParts.size ? 'bg-green-500' : 'bg-white/10'
                       )}
-                      <span className="font-bold text-text-primary">
-                        {isCorrect ? 'Correct! +15 XP' : `That's ${selectedAnswer}`}
-                      </span>
-                    </div>
-                    <p className="text-sm text-text-secondary">
-                      <strong>{question.targetPart.name}:</strong> {question.targetPart.description}
-                    </p>
+                    />
+                  ))}
+                  <span className="ml-2 text-sm text-gray-400">
+                    Diagram {diagramIndex + 1}/{diagrams.length}
+                  </span>
+                </div>
+
+                {/* Diagram card */}
+                <div className="bg-[#16161d] border border-white/10 rounded-2xl p-6 mb-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Search size={20} className="text-purple-400" />
+                    <span className={cn(
+                      'text-sm px-3 py-1 rounded-full border',
+                      getSubjectBgColor(currentDiagram.subject)
+                    )}>
+                      {currentDiagram.subject}
+                    </span>
+                    <span className={cn(
+                      'text-sm px-3 py-1 rounded-full border bg-white/5 border-white/10',
+                      difficulty.color
+                    )}>
+                      {difficulty.level}
+                    </span>
                   </div>
 
-                  <button
-                    onClick={nextQuestion}
-                    className="w-full btn-primary py-4 flex items-center justify-center gap-2"
-                  >
-                    {answeredParts.size >= partsPerDiagram ? (
-                      diagramIndex < diagrams.length - 1 ? (
-                        <>
-                          Next Diagram
-                          <ArrowRight size={20} />
-                        </>
-                      ) : (
-                        'See Results'
-                      )
-                    ) : (
-                      <>
-                        Next Part
-                        <ArrowRight size={20} />
-                      </>
-                    )}
-                  </button>
-                </motion.div>
-              )}
+                  <h2 className="text-xl font-bold text-white mb-2">
+                    {currentDiagram.title}
+                  </h2>
+
+                  {/* ASCII Art Diagram */}
+                  <div className="p-4 bg-[#0a0a0f] rounded-xl mb-4 overflow-x-auto">
+                    <pre className="text-xs sm:text-sm font-mono text-white whitespace-pre leading-relaxed">
+                      {currentDiagram.asciiArt}
+                    </pre>
+                  </div>
+
+                  {/* Question */}
+                  <div className="p-4 bg-purple-500/20 border border-purple-500/30 rounded-xl">
+                    <p className="font-semibold text-white text-center">
+                      What is the function of: <span className="text-purple-400">{question.targetPart.name}</span>?
+                    </p>
+                  </div>
+                </div>
+
+                {/* Options */}
+                <div className="space-y-3">
+                  {question.options.map((option, index) => {
+                    const isSelected = selectedAnswer === option;
+                    const isCorrectOption = option === question.targetPart.name;
+                    const optionPart = currentDiagram.parts.find(p => p.name === option);
+
+                    return (
+                      <motion.button
+                        key={index}
+                        initial={{ x: -20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: index * 0.1 }}
+                        onClick={() => handleAnswer(option)}
+                        disabled={showResult}
+                        className={cn(
+                          'w-full p-4 rounded-xl font-medium text-left transition-all border-2',
+                          'flex items-center gap-3',
+                          showResult
+                            ? isCorrectOption
+                              ? 'bg-green-500/20 border-green-500 text-green-400'
+                              : isSelected
+                                ? 'bg-red-500/20 border-red-500 text-red-400'
+                                : 'bg-white/5 border-white/10 text-gray-400'
+                            : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-purple-500/50'
+                        )}
+                      >
+                        <span className="w-8 h-8 rounded-full bg-[#0a0a0f] flex items-center justify-center text-sm font-bold shrink-0">
+                          {String.fromCharCode(65 + index)}
+                        </span>
+                        <span className="flex-1">{optionPart?.description || option}</span>
+                        {showResult && isCorrectOption && (
+                          <CheckCircle size={20} className="text-green-400 shrink-0" />
+                        )}
+                        {showResult && isSelected && !isCorrectOption && (
+                          <XCircle size={20} className="text-red-400 shrink-0" />
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+
+                {/* Result feedback */}
+                <AnimatePresence>
+                  {showResult && (
+                    <motion.div
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      className="mt-6"
+                    >
+                      <div className={cn(
+                        'p-4 rounded-xl mb-4 border',
+                        isCorrect
+                          ? 'bg-green-500/20 border-green-500/30'
+                          : 'bg-red-500/20 border-red-500/30'
+                      )}>
+                        <div className="flex items-center gap-2 mb-2">
+                          {isCorrect ? (
+                            <CheckCircle size={20} className="text-green-400" />
+                          ) : (
+                            <XCircle size={20} className="text-red-400" />
+                          )}
+                          <span className={cn(
+                            'font-bold',
+                            isCorrect ? 'text-green-400' : 'text-red-400'
+                          )}>
+                            {isCorrect ? `Correct! +${scoring.comboMultiplier > 1 ? Math.round(100 * scoring.comboMultiplier) : 100} points` : `That's ${selectedAnswer}`}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-300">
+                          <strong className="text-white">{question.targetPart.name}:</strong> {question.targetPart.description}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={nextQuestion}
+                        className="w-full bg-gradient-to-r from-purple-500 to-pink-600 text-white py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
+                      >
+                        {answeredParts.size >= partsPerDiagram ? (
+                          diagramIndex < diagrams.length - 1 ? (
+                            <>
+                              Next Diagram
+                              <ArrowRight size={20} />
+                            </>
+                          ) : (
+                            'See Results'
+                          )
+                        ) : (
+                          <>
+                            Next Part
+                            <ArrowRight size={20} />
+                          </>
+                        )}
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
             </AnimatePresence>
-          </motion.div>
-        )}
-      </main>
-    </div>
+          )}
+        </div>
+      </GameFrame>
+    </>
   );
 }

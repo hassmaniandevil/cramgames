@@ -3,22 +3,28 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore } from '@/lib/stores/userStore';
 import {
-  X,
-  Zap,
-  Trophy,
-  RotateCcw,
-  Home,
-  Users,
   Swords,
   Clock,
   Copy,
   Check,
   Share2,
   Crown,
+  Users,
 } from 'lucide-react';
+import {
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import { useUserStore } from '@/lib/stores/userStore';
+import { cn } from '@/lib/utils/cn';
 
 interface Question {
   question: string;
@@ -30,9 +36,9 @@ interface Question {
 const QUESTIONS: Question[] = [
   { question: 'What is the powerhouse of the cell?', options: ['Nucleus', 'Mitochondria', 'Ribosome', 'Chloroplast'], correctIndex: 1, subject: 'Biology' },
   { question: 'What is the chemical symbol for Gold?', options: ['Go', 'Au', 'Ag', 'Gd'], correctIndex: 1, subject: 'Chemistry' },
-  { question: 'What is 12 × 8?', options: ['84', '96', '88', '92'], correctIndex: 1, subject: 'Maths' },
+  { question: 'What is 12 x 8?', options: ['84', '96', '88', '92'], correctIndex: 1, subject: 'Maths' },
   { question: 'What unit is electrical resistance measured in?', options: ['Volts', 'Amps', 'Ohms', 'Watts'], correctIndex: 2, subject: 'Physics' },
-  { question: 'What is the formula for speed?', options: ['Distance × Time', 'Distance ÷ Time', 'Time ÷ Distance', 'Mass × Velocity'], correctIndex: 1, subject: 'Physics' },
+  { question: 'What is the formula for speed?', options: ['Distance x Time', 'Distance / Time', 'Time / Distance', 'Mass x Velocity'], correctIndex: 1, subject: 'Physics' },
   { question: 'Which base pairs with Adenine in DNA?', options: ['Guanine', 'Cytosine', 'Thymine', 'Uracil'], correctIndex: 2, subject: 'Biology' },
   { question: 'What is 15% of 200?', options: ['25', '30', '35', '40'], correctIndex: 1, subject: 'Maths' },
   { question: 'What is the atomic number of Carbon?', options: ['8', '6', '12', '14'], correctIndex: 1, subject: 'Chemistry' },
@@ -40,7 +46,8 @@ const QUESTIONS: Question[] = [
   { question: 'What process do plants use to make food?', options: ['Respiration', 'Digestion', 'Photosynthesis', 'Osmosis'], correctIndex: 2, subject: 'Biology' },
 ];
 
-const ROUND_TIME = 10; // seconds per question
+const ROUND_TIME = 10;
+const TOTAL_QUESTIONS = 5;
 
 // Map year group to difficulty level
 function getDifficultyFromYearGroup(yearGroup: number): { level: string; label: string } {
@@ -53,29 +60,38 @@ function getDifficultyFromYearGroup(yearGroup: number): { level: string; label: 
   } else if (yearGroup >= 12 && yearGroup <= 13) {
     return { level: 'alevel', label: 'A-Level' };
   }
-  return { level: 'gcse', label: 'GCSE' }; // Default
+  return { level: 'gcse', label: 'GCSE' };
 }
 
 export default function PvPBattlePage() {
   const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
 
-  // Get year group and difficulty from user profile
   const yearGroup = profile?.yearGroup ?? 10;
   const difficulty = getDifficultyFromYearGroup(yearGroup);
 
-  const [gameState, setGameState] = useState<'menu' | 'waiting' | 'playing' | 'results'>('menu');
+  // PvP-specific state (menu, waiting, etc.)
+  const [pvpPhase, setPvpPhase] = useState<'menu' | 'waiting' | 'game' | 'results'>('menu');
   const [mode, setMode] = useState<'host' | 'join' | null>(null);
   const [roomCode, setRoomCode] = useState('');
   const [inputCode, setInputCode] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Game state
+  // Game state hooks
+  const { gameState, isPlaying, startGame, finishGame, resetGame } = useGameState();
+  const timer = useGameTimer({
+    initialTime: ROUND_TIME,
+    countDown: true,
+    onTimeUp: () => handleTimeUp(),
+  });
+  const scoring = useGameScore({ basePointsPerQuestion: 100 });
+  const audio = useGameAudio();
+  const { shake, shakeStyle } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  // Game-specific state
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(ROUND_TIME);
-  const [playerScore, setPlayerScore] = useState(0);
   const [opponentScore, setOpponentScore] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -96,11 +112,11 @@ export default function PvPBattlePage() {
     const code = generateRoomCode();
     setRoomCode(code);
     setMode('host');
-    setGameState('waiting');
+    setPvpPhase('waiting');
 
     // Simulate opponent joining after delay (in real app, this would be WebSocket)
     setTimeout(() => {
-      startGame();
+      initializeGame();
     }, 3000);
   };
 
@@ -109,50 +125,41 @@ export default function PvPBattlePage() {
     if (inputCode.length === 6) {
       setRoomCode(inputCode.toUpperCase());
       setMode('join');
-      startGame();
+      initializeGame();
     }
   };
 
-  // Start the actual game
-  const startGame = () => {
-    const shuffled = [...QUESTIONS].sort(() => Math.random() - 0.5).slice(0, 5);
+  // Initialize the actual game
+  const initializeGame = useCallback(() => {
+    const shuffled = [...QUESTIONS].sort(() => Math.random() - 0.5).slice(0, TOTAL_QUESTIONS);
     setQuestions(shuffled);
     setCurrentQuestion(0);
-    setPlayerScore(0);
     setOpponentScore(0);
-    setTimeLeft(ROUND_TIME);
     setSelectedAnswer(null);
     setShowResult(false);
     setPlayerAnswered(false);
-    setGameState('playing');
-  };
+    scoring.reset();
+    timer.reset(ROUND_TIME);
+    setPvpPhase('game');
+    startGame();
+    timer.start();
+  }, [scoring, timer, startGame]);
 
-  // Timer effect
-  useEffect(() => {
-    if (gameState !== 'playing' || showResult) return;
+  // Handle time up for current question
+  const handleTimeUp = useCallback(() => {
+    if (showResult) return;
 
-    const timer = setInterval(() => {
-      setTimeLeft(t => {
-        if (t <= 1) {
-          handleTimeUp();
-          return ROUND_TIME;
-        }
-        return t - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [gameState, showResult, currentQuestion]);
-
-  const handleTimeUp = () => {
     if (!playerAnswered) {
-      // Player didn't answer in time
       setSelectedAnswer(-1);
+      scoring.recordWrong();
+      audio.playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
     }
     setShowResult(true);
 
-    // Simulate opponent answering (in real app, this would be from server)
-    const opponentCorrect = Math.random() > 0.4; // 60% chance opponent is correct
+    // Simulate opponent answering
+    const opponentCorrect = Math.random() > 0.4;
     if (opponentCorrect) {
       setOpponentScore(s => s + 100);
     }
@@ -160,39 +167,49 @@ export default function PvPBattlePage() {
     setTimeout(() => {
       if (currentQuestion < questions.length - 1) {
         setCurrentQuestion(q => q + 1);
-        setTimeLeft(ROUND_TIME);
+        timer.reset(ROUND_TIME);
+        timer.start();
         setSelectedAnswer(null);
         setShowResult(false);
         setPlayerAnswered(false);
       } else {
-        // Game over
-        setGameState('results');
-        const finalScore = playerScore + (selectedAnswer === questions[currentQuestion]?.correctIndex ? 100 : 0);
-        addXP(finalScore);
+        finishGame();
+        setPvpPhase('results');
       }
     }, 2000);
-  };
+  }, [showResult, playerAnswered, currentQuestion, questions.length, timer, scoring, audio, shake, emitWrong, finishGame]);
 
-  const handleAnswer = (index: number) => {
+  // Handle answer selection
+  const handleAnswer = useCallback((index: number) => {
     if (playerAnswered || showResult) return;
 
     setSelectedAnswer(index);
     setPlayerAnswered(true);
 
     const question = questions[currentQuestion];
-    if (index === question.correctIndex) {
-      // Bonus for speed
-      const speedBonus = Math.floor(timeLeft * 5);
-      setPlayerScore(s => s + 100 + speedBonus);
-    }
-  };
+    const isCorrect = index === question.correctIndex;
 
+    if (isCorrect) {
+      const speedBonus = Math.floor(timer.time * 5);
+      scoring.recordCorrect(speedBonus);
+      audio.playCorrect(scoring.combo);
+      emitCorrect();
+    } else {
+      scoring.recordWrong();
+      audio.playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
+    }
+  }, [playerAnswered, showResult, questions, currentQuestion, timer.time, scoring, audio, shake, emitCorrect, emitWrong]);
+
+  // Copy room code
   const copyCode = async () => {
     await navigator.clipboard.writeText(roomCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Share room code
   const shareCode = async () => {
     if (navigator.share) {
       await navigator.share({
@@ -205,10 +222,35 @@ export default function PvPBattlePage() {
     }
   };
 
+  // Restart game
+  const handleRestart = () => {
+    resetGame();
+    setOpponentScore(0);
+    setPvpPhase('menu');
+    setMode(null);
+    setRoomCode('');
+    setInputCode('');
+  };
+
+  // Calculate stats
+  const stats = {
+    score: scoring.score,
+    correctAnswers: scoring.correctAnswers,
+    wrongAnswers: scoring.wrongAnswers,
+    combo: scoring.combo,
+    maxCombo: scoring.maxCombo,
+    accuracy: scoring.accuracy,
+    xpEarned: scoring.xpEarned,
+    isPerfect: scoring.isPerfect,
+  };
+
+  const playerWon = scoring.score > opponentScore;
+  const tie = scoring.score === opponentScore;
+
   // Menu screen
-  if (gameState === 'menu') {
+  if (pvpPhase === 'menu') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-rose-900 via-purple-900 to-indigo-900 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0f0f17] flex flex-col items-center justify-center p-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -222,8 +264,8 @@ export default function PvPBattlePage() {
             <Swords size={56} className="text-white" />
           </motion.div>
 
-          <h1 className="text-4xl font-black text-white mb-2">PvP BATTLE</h1>
-          <p className="text-white/60 mb-8">Challenge a friend to a quiz duel!</p>
+          <h1 className="text-4xl font-black text-white mb-2">PVP BATTLE</h1>
+          <p className="text-gray-400 mb-8">Challenge a friend to a quiz duel!</p>
 
           <div className="space-y-4">
             <motion.button
@@ -241,7 +283,7 @@ export default function PvPBattlePage() {
                 <div className="w-full border-t border-white/20"></div>
               </div>
               <div className="relative flex justify-center">
-                <span className="px-4 bg-transparent text-white/40 text-sm">or join a game</span>
+                <span className="px-4 bg-[#0f0f17] text-gray-500 text-sm">or join a game</span>
               </div>
             </div>
 
@@ -251,14 +293,14 @@ export default function PvPBattlePage() {
                 value={inputCode}
                 onChange={(e) => setInputCode(e.target.value.toUpperCase().slice(0, 6))}
                 placeholder="ENTER CODE"
-                className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/40 text-center font-mono text-lg tracking-widest"
+                className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 text-center font-mono text-lg tracking-widest"
               />
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={joinGame}
                 disabled={inputCode.length !== 6}
-                className="px-6 py-3 bg-white/20 rounded-xl font-bold text-white disabled:opacity-50"
+                className="px-6 py-3 bg-white/10 rounded-xl font-bold text-white disabled:opacity-50"
               >
                 JOIN
               </motion.button>
@@ -267,7 +309,7 @@ export default function PvPBattlePage() {
 
           <button
             onClick={() => router.push('/')}
-            className="mt-8 text-white/60 hover:text-white"
+            className="mt-8 text-gray-500 hover:text-white"
           >
             Back to Home
           </button>
@@ -277,9 +319,9 @@ export default function PvPBattlePage() {
   }
 
   // Waiting for opponent
-  if (gameState === 'waiting') {
+  if (pvpPhase === 'waiting') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-rose-900 via-purple-900 to-indigo-900 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0f0f17] flex flex-col items-center justify-center p-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -288,19 +330,19 @@ export default function PvPBattlePage() {
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}
-            className="w-20 h-20 mx-auto mb-6 rounded-full border-4 border-white/20 border-t-rose-500"
+            className="w-20 h-20 mx-auto mb-6 rounded-full border-4 border-white/10 border-t-rose-500"
           />
 
           <h2 className="text-2xl font-bold text-white mb-2">Waiting for opponent...</h2>
-          <p className="text-white/60 mb-6">Share this code with your friend</p>
+          <p className="text-gray-400 mb-6">Share this code with your friend</p>
 
-          <div className="bg-white/10 rounded-2xl p-6 mb-4">
-            <p className="text-white/60 text-sm mb-2">ROOM CODE</p>
+          <div className="bg-white/5 rounded-2xl p-6 mb-4 border border-white/10">
+            <p className="text-gray-500 text-sm mb-2">ROOM CODE</p>
             <p className="text-4xl font-mono font-black text-white tracking-widest">{roomCode}</p>
           </div>
 
-          <div className="bg-gradient-to-r from-rose-500/20 to-orange-500/20 rounded-xl px-4 py-3 mb-6 border border-rose-500/30">
-            <p className="text-white/60 text-xs mb-1">DIFFICULTY LEVEL</p>
+          <div className="bg-gradient-to-r from-rose-500/10 to-orange-500/10 rounded-xl px-4 py-3 mb-6 border border-rose-500/20">
+            <p className="text-gray-500 text-xs mb-1">DIFFICULTY LEVEL</p>
             <p className="text-lg font-bold text-white">{difficulty.label} (Year {yearGroup})</p>
           </div>
 
@@ -309,7 +351,7 @@ export default function PvPBattlePage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={copyCode}
-              className="flex items-center gap-2 px-4 py-2 bg-white/20 rounded-xl text-white"
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-xl text-white"
             >
               {copied ? <Check size={20} /> : <Copy size={20} />}
               {copied ? 'Copied!' : 'Copy'}
@@ -318,7 +360,7 @@ export default function PvPBattlePage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={shareCode}
-              className="flex items-center gap-2 px-4 py-2 bg-white/20 rounded-xl text-white"
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-xl text-white"
             >
               <Share2 size={20} />
               Share
@@ -326,8 +368,8 @@ export default function PvPBattlePage() {
           </div>
 
           <button
-            onClick={() => setGameState('menu')}
-            className="mt-8 text-white/60 hover:text-white"
+            onClick={() => setPvpPhase('menu')}
+            className="mt-8 text-gray-500 hover:text-white"
           >
             Cancel
           </button>
@@ -336,13 +378,12 @@ export default function PvPBattlePage() {
     );
   }
 
-  // Results screen
-  if (gameState === 'results') {
-    const playerWon = playerScore > opponentScore;
-    const tie = playerScore === opponentScore;
-
+  // Results screen (custom PvP results)
+  if (pvpPhase === 'results') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-rose-900 via-purple-900 to-indigo-900 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0f0f17] flex flex-col items-center justify-center p-6">
+        <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -352,11 +393,14 @@ export default function PvPBattlePage() {
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ type: 'spring' }}
-            className={`w-24 h-24 mx-auto mb-6 rounded-full flex items-center justify-center shadow-2xl ${
-              playerWon ? 'bg-gradient-to-br from-yellow-400 to-amber-500 shadow-yellow-500/50' :
-              tie ? 'bg-gradient-to-br from-gray-400 to-gray-500' :
-              'bg-gradient-to-br from-red-500 to-red-700'
-            }`}
+            className={cn(
+              'w-24 h-24 mx-auto mb-6 rounded-full flex items-center justify-center shadow-2xl',
+              playerWon
+                ? 'bg-gradient-to-br from-yellow-400 to-amber-500 shadow-yellow-500/50'
+                : tie
+                  ? 'bg-gradient-to-br from-gray-400 to-gray-500'
+                  : 'bg-gradient-to-br from-red-500 to-red-700'
+            )}
           >
             {playerWon ? <Crown size={48} className="text-white" /> :
              tie ? <Users size={48} className="text-white" /> :
@@ -366,18 +410,40 @@ export default function PvPBattlePage() {
           <h1 className="text-4xl font-black text-white mb-2">
             {playerWon ? 'VICTORY!' : tie ? 'TIE GAME!' : 'DEFEAT'}
           </h1>
-          <p className="text-white/60 mb-8">
+          <p className="text-gray-400 mb-8">
             {playerWon ? 'You crushed it!' : tie ? 'Evenly matched!' : 'Better luck next time!'}
           </p>
 
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className={`rounded-2xl p-4 ${playerWon ? 'bg-yellow-500/20 ring-2 ring-yellow-500' : 'bg-white/10'}`}>
-              <p className="text-white/60 text-sm mb-1">YOU</p>
-              <p className="text-3xl font-black text-white">{playerScore}</p>
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className={cn(
+              'rounded-2xl p-4 border',
+              playerWon ? 'bg-yellow-500/10 border-yellow-500/50' : 'bg-white/5 border-white/10'
+            )}>
+              <p className="text-gray-500 text-sm mb-1">YOU</p>
+              <p className="text-3xl font-black text-white">{scoring.score}</p>
             </div>
-            <div className={`rounded-2xl p-4 ${!playerWon && !tie ? 'bg-rose-500/20 ring-2 ring-rose-500' : 'bg-white/10'}`}>
-              <p className="text-white/60 text-sm mb-1">OPPONENT</p>
+            <div className={cn(
+              'rounded-2xl p-4 border',
+              !playerWon && !tie ? 'bg-rose-500/10 border-rose-500/50' : 'bg-white/5 border-white/10'
+            )}>
+              <p className="text-gray-500 text-sm mb-1">OPPONENT</p>
               <p className="text-3xl font-black text-white">{opponentScore}</p>
+            </div>
+          </div>
+
+          {/* Additional stats */}
+          <div className="grid grid-cols-3 gap-3 mb-8">
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <p className="text-xs text-gray-500">Accuracy</p>
+              <p className="text-lg font-bold text-white">{stats.accuracy}%</p>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <p className="text-xs text-gray-500">Max Combo</p>
+              <p className="text-lg font-bold text-orange-400">x{stats.maxCombo}</p>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <p className="text-xs text-gray-500">XP Earned</p>
+              <p className="text-lg font-bold text-yellow-400">+{stats.xpEarned}</p>
             </div>
           </div>
 
@@ -385,17 +451,15 @@ export default function PvPBattlePage() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setGameState('menu')}
+              onClick={handleRestart}
               className="w-full py-4 font-bold text-white bg-gradient-to-r from-rose-500 to-orange-500 rounded-xl flex items-center justify-center gap-2"
             >
-              <RotateCcw size={20} />
               PLAY AGAIN
             </motion.button>
             <button
               onClick={() => router.push('/')}
-              className="w-full py-4 font-bold text-white/80 bg-white/10 rounded-xl flex items-center justify-center gap-2"
+              className="w-full py-4 font-bold text-gray-400 bg-white/5 rounded-xl flex items-center justify-center gap-2 hover:bg-white/10"
             >
-              <Home size={20} />
               HOME
             </button>
           </div>
@@ -408,46 +472,69 @@ export default function PvPBattlePage() {
   const question = questions[currentQuestion];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-rose-900 via-purple-900 to-indigo-900 flex flex-col">
+    <div className="min-h-screen bg-[#0f0f17] flex flex-col" style={shakeStyle}>
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 bg-black/30">
-        <button onClick={() => router.push('/')} className="p-2 text-white/60">
-          <X size={24} />
+      <header className="flex items-center justify-between px-4 py-3 bg-[#16161d] border-b border-white/10">
+        <button onClick={() => router.push('/')} className="p-2 text-gray-500 hover:text-white">
+          <Swords size={24} />
         </button>
         <div className="flex items-center gap-4">
           <div className="text-center">
-            <p className="text-xs text-white/60">YOU</p>
-            <p className="font-bold text-yellow-400">{playerScore}</p>
+            <p className="text-xs text-gray-500">YOU</p>
+            <p className="font-bold text-yellow-400">{scoring.score}</p>
           </div>
-          <div className="text-2xl">⚔️</div>
+          <div className="text-2xl text-gray-500">VS</div>
           <div className="text-center">
-            <p className="text-xs text-white/60">OPP</p>
+            <p className="text-xs text-gray-500">OPP</p>
             <p className="font-bold text-rose-400">{opponentScore}</p>
           </div>
         </div>
         <div className="w-10" />
       </header>
 
-      {/* Timer */}
+      {/* Timer and progress */}
       <div className="px-4 py-3">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-white/60 text-sm">Q{currentQuestion + 1}/{questions.length}</span>
+          <span className="text-gray-500 text-sm">Q{currentQuestion + 1}/{questions.length}</span>
           <div className="flex items-center gap-2">
-            <Clock size={16} className={timeLeft <= 3 ? 'text-red-400' : 'text-white/60'} />
-            <span className={`font-mono font-bold ${timeLeft <= 3 ? 'text-red-400' : 'text-white'}`}>
-              {timeLeft}s
+            <Clock size={16} className={timer.isCritical ? 'text-red-400' : 'text-gray-500'} />
+            <span className={cn(
+              'font-mono font-bold',
+              timer.isCritical ? 'text-red-400' : 'text-white'
+            )}>
+              {timer.time}s
             </span>
           </div>
         </div>
-        <div className="h-2 bg-black/30 rounded-full overflow-hidden">
+        <div className="h-2 bg-white/5 rounded-full overflow-hidden">
           <motion.div
-            className={`h-full ${timeLeft <= 3 ? 'bg-red-500' : 'bg-gradient-to-r from-rose-500 to-orange-500'}`}
+            className={cn(
+              'h-full',
+              timer.isCritical ? 'bg-red-500' : 'bg-gradient-to-r from-rose-500 to-orange-500'
+            )}
             initial={{ width: '100%' }}
-            animate={{ width: `${(timeLeft / ROUND_TIME) * 100}%` }}
+            animate={{ width: `${(timer.time / ROUND_TIME) * 100}%` }}
             transition={{ duration: 0.5 }}
           />
         </div>
       </div>
+
+      {/* Combo indicator */}
+      {scoring.combo >= 2 && (
+        <div className="px-4 pb-2">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex justify-center"
+          >
+            <div className="px-4 py-1 bg-orange-500/10 border border-orange-500/30 rounded-full">
+              <span className="font-bold text-orange-400">x{scoring.combo} Combo!</span>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Question */}
       <div className="flex-1 flex flex-col items-center justify-center px-4">
@@ -457,23 +544,15 @@ export default function PvPBattlePage() {
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-md"
         >
-          <div className="bg-white/10 backdrop-blur rounded-2xl p-6 mb-6">
-            <span className="text-xs text-white/60 bg-white/10 px-2 py-1 rounded-full">{question?.subject}</span>
+          <div className="bg-white/5 backdrop-blur rounded-2xl p-6 mb-6 border border-white/10">
+            <span className="text-xs text-gray-500 bg-white/5 px-2 py-1 rounded-full">{question?.subject}</span>
             <p className="text-xl font-bold text-white mt-3">{question?.question}</p>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
             {question?.options.map((option, i) => {
-              let buttonClass = 'bg-white/10 border-white/20 hover:bg-white/15';
-              if (showResult) {
-                if (i === question.correctIndex) {
-                  buttonClass = 'bg-green-500/30 border-green-500';
-                } else if (i === selectedAnswer && i !== question.correctIndex) {
-                  buttonClass = 'bg-red-500/30 border-red-500';
-                }
-              } else if (selectedAnswer === i) {
-                buttonClass = 'bg-rose-500/30 border-rose-500';
-              }
+              const isSelected = selectedAnswer === i;
+              const isCorrectAnswer = i === question.correctIndex;
 
               return (
                 <motion.button
@@ -482,7 +561,18 @@ export default function PvPBattlePage() {
                   whileTap={!showResult && selectedAnswer === null ? { scale: 0.98 } : {}}
                   onClick={() => handleAnswer(i)}
                   disabled={showResult || playerAnswered}
-                  className={`p-4 rounded-xl border-2 text-white font-semibold text-left transition-all ${buttonClass}`}
+                  className={cn(
+                    'p-4 rounded-xl border-2 text-white font-semibold text-left transition-all',
+                    showResult
+                      ? isCorrectAnswer
+                        ? 'bg-green-500/20 border-green-500'
+                        : isSelected
+                          ? 'bg-red-500/20 border-red-500'
+                          : 'bg-white/5 border-white/10'
+                      : isSelected
+                        ? 'bg-rose-500/20 border-rose-500'
+                        : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  )}
                 >
                   {option}
                 </motion.button>

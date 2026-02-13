@@ -1,21 +1,26 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore } from '@/lib/stores/userStore';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X,
-  Zap,
-  Trophy,
-  RotateCcw,
-  Home,
   Layers,
   CheckCircle,
   XCircle,
   ArrowRight,
 } from 'lucide-react';
+import {
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import { useUserStore } from '@/lib/stores/userStore';
+import { cn } from '@/lib/utils/cn';
 
 type DifficultyLevel = 'KS3' | 'GCSE' | 'A-Level';
 
@@ -269,26 +274,15 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
+const TOTAL_CHALLENGES = 4;
+const GAME_TIME = 120; // 2 minutes
+
 export default function CategorySortPage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
-
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
-  const [challengeIndex, setChallengeIndex] = useState(0);
-  const [unsortedItems, setUnsortedItems] = useState<SortItem[]>([]);
-  const [sortedItems, setSortedItems] = useState<Record<string, SortItem[]>>({});
-  const [selectedItem, setSelectedItem] = useState<SortItem | null>(null);
-  const [showResult, setShowResult] = useState(false);
-  const [score, setScore] = useState(0);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [gameChallenges, setGameChallenges] = useState<Challenge[]>([]);
-
-  // Get year group from profile, default to 10 (GCSE) if not set
   const yearGroup = profile?.yearGroup ?? 10;
 
   // Determine difficulty based on year group
-  const { level: difficultyLevel, filter: difficultyFilter } = useMemo(
+  const { filter: difficultyFilter } = useMemo(
     () => getDifficultyFromYearGroup(yearGroup),
     [yearGroup]
   );
@@ -299,19 +293,49 @@ export default function CategorySortPage() {
     [difficultyFilter]
   );
 
-  const totalChallenges = 4;
+  // Game state hooks
+  const { gameState, isPlaying, startGame, finishGame, resetGame } = useGameState();
+  const timer = useGameTimer({
+    initialTime: GAME_TIME,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+  const scoring = useGameScore({ basePointsPerQuestion: 100 });
+  const audio = useGameAudio();
+  const { shake, shakeStyle } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  // Game-specific state
+  const [challengeIndex, setChallengeIndex] = useState(0);
+  const [unsortedItems, setUnsortedItems] = useState<SortItem[]>([]);
+  const [sortedItems, setSortedItems] = useState<Record<string, SortItem[]>>({});
+  const [selectedItem, setSelectedItem] = useState<SortItem | null>(null);
+  const [showResult, setShowResult] = useState(false);
+  const [gameChallenges, setGameChallenges] = useState<Challenge[]>([]);
+  const [correctCount, setCorrectCount] = useState(0);
+
   const challenge = gameChallenges[challengeIndex];
 
-  const startGame = () => {
-    const shuffled = shuffleArray(availableChallenges).slice(0, totalChallenges);
+  // Handle game start
+  const handleStart = useCallback(() => {
+    const shuffled = shuffleArray(availableChallenges).slice(0, TOTAL_CHALLENGES);
     setGameChallenges(shuffled);
     setChallengeIndex(0);
-    setScore(0);
-    setGameState('playing');
-  };
+    startGame();
+    timer.reset(GAME_TIME);
+    timer.start();
+    scoring.reset();
+  }, [availableChallenges, startGame, timer, scoring]);
 
+  // Handle restart
+  const handleRestart = useCallback(() => {
+    resetGame();
+    setTimeout(handleStart, 100);
+  }, [resetGame, handleStart]);
+
+  // Initialize challenge when it changes
   useEffect(() => {
-    if (challenge && gameState === 'playing') {
+    if (challenge && isPlaying) {
       setUnsortedItems(shuffleArray(challenge.items));
       const initial: Record<string, SortItem[]> = {};
       challenge.categories.forEach(cat => {
@@ -321,14 +345,14 @@ export default function CategorySortPage() {
       setSelectedItem(null);
       setShowResult(false);
     }
-  }, [challengeIndex, challenge, gameState]);
+  }, [challengeIndex, challenge, isPlaying]);
 
-  const handleItemClick = (item: SortItem) => {
+  const handleItemClick = useCallback((item: SortItem) => {
     if (showResult) return;
     setSelectedItem(selectedItem?.id === item.id ? null : item);
-  };
+  }, [showResult, selectedItem]);
 
-  const handleCategoryClick = (category: string) => {
+  const handleCategoryClick = useCallback((category: string) => {
     if (!selectedItem || showResult) return;
 
     // Move item to category
@@ -338,9 +362,9 @@ export default function CategorySortPage() {
       [category]: [...prev[category], selectedItem],
     }));
     setSelectedItem(null);
-  };
+  }, [selectedItem, showResult]);
 
-  const handleRemoveItem = (item: SortItem, category: string) => {
+  const handleRemoveItem = useCallback((item: SortItem, category: string) => {
     if (showResult) return;
 
     setSortedItems(prev => ({
@@ -348,335 +372,273 @@ export default function CategorySortPage() {
       [category]: prev[category].filter(i => i.id !== item.id),
     }));
     setUnsortedItems(prev => [...prev, item]);
-  };
+  }, [showResult]);
 
-  const checkAnswers = () => {
+  const checkAnswers = useCallback(() => {
+    if (!challenge) return;
+
     let correct = 0;
+    let wrong = 0;
+
     Object.entries(sortedItems).forEach(([category, items]) => {
       items.forEach(item => {
         if (item.category === category) {
           correct++;
+        } else {
+          wrong++;
         }
       });
     });
 
     setCorrectCount(correct);
-    const points = correct * 10;
-    setScore(s => s + points);
-    if (points > 0) addXP(points);
     setShowResult(true);
-  };
 
-  const nextChallenge = () => {
-    if (challengeIndex < totalChallenges - 1) {
+    // Record each correct/wrong answer for scoring
+    for (let i = 0; i < correct; i++) {
+      scoring.recordCorrect();
+    }
+    for (let i = 0; i < wrong; i++) {
+      scoring.recordWrong();
+    }
+
+    // Play appropriate feedback
+    if (correct === challenge.items.length) {
+      audio.playCorrect(scoring.combo);
+      emitCorrect();
+    } else if (wrong > 0) {
+      audio.playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
+    } else {
+      audio.playCorrect(scoring.combo);
+      emitCorrect();
+    }
+  }, [challenge, sortedItems, scoring, audio, shake, emitCorrect, emitWrong]);
+
+  const nextChallenge = useCallback(() => {
+    if (challengeIndex < TOTAL_CHALLENGES - 1) {
       setChallengeIndex(prev => prev + 1);
     } else {
-      setGameState('finished');
+      finishGame();
     }
-  };
-
-  const resetGame = () => {
-    setGameState('ready');
-  };
+  }, [challengeIndex, finishGame]);
 
   const allSorted = unsortedItems.length === 0;
 
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-teal-900 via-cyan-900 to-blue-900 flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-sm"
-        >
-          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-teal-500/30 flex items-center justify-center">
-            <Layers size={48} className="text-teal-400" />
-          </div>
-
-          <h1 className="text-3xl font-bold text-white mb-2">
-            Category Sort
-          </h1>
-          <p className="text-white/70 mb-4">
-            Sort items into the correct categories!
-          </p>
-
-          <div className={`inline-block px-4 py-2 rounded-full text-sm font-semibold mb-6 ${
-            difficultyLevel === 'KS3'
-              ? 'bg-green-500/30 text-green-400'
-              : difficultyLevel === 'GCSE'
-              ? 'bg-blue-500/30 text-blue-400'
-              : 'bg-purple-500/30 text-purple-400'
-          }`}>
-            {difficultyLevel} Difficulty
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-center border border-white/20">
-              <div className="text-2xl font-bold text-teal-400">{totalChallenges}</div>
-              <p className="text-sm text-white/60">Challenges</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-center border border-white/20">
-              <div className="text-2xl font-bold text-cyan-400">8</div>
-              <p className="text-sm text-white/60">Items Each</p>
-            </div>
-          </div>
-
-          <button
-            onClick={startGame}
-            className="w-full py-4 font-bold text-white bg-gradient-to-r from-teal-400 to-cyan-500 rounded-xl text-lg"
-          >
-            Start Game
-          </button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-4 text-white/60 hover:text-white transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Complete screen
-  if (gameState === 'finished') {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-teal-900 via-cyan-900 to-blue-900 flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 w-full max-w-md text-center border border-white/20"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center shadow-xl"
-          >
-            <Trophy size={48} className="text-white" />
-          </motion.div>
-
-          <h1 className="text-3xl font-black text-white mb-2">
-            SORTING MASTER!
-          </h1>
-          <p className="text-white/70 mb-6">
-            All categories complete!
-          </p>
-
-          <div className="text-5xl font-black text-yellow-400 mb-2">{score}</div>
-          <div className="text-white/60 mb-8">Total XP Earned</div>
-
-          <div className="space-y-3">
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={resetGame}
-              className="w-full py-4 font-bold text-white bg-gradient-to-r from-teal-400 to-cyan-500 rounded-xl flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              PLAY AGAIN
-            </motion.button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full py-4 font-bold text-white/80 bg-white/10 rounded-xl flex items-center justify-center gap-2 hover:bg-white/20 transition-colors"
-            >
-              <Home size={20} />
-              HOME
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Show loading if no challenge yet
-  if (!challenge) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-teal-900 via-cyan-900 to-blue-900 flex items-center justify-center">
-        <div className="text-white">Loading...</div>
-      </div>
-    );
-  }
+  // Calculate stats for results
+  const stats = {
+    score: scoring.score,
+    correctAnswers: scoring.correctAnswers,
+    wrongAnswers: scoring.wrongAnswers,
+    combo: scoring.combo,
+    maxCombo: scoring.maxCombo,
+    accuracy: scoring.accuracy,
+    xpEarned: scoring.xpEarned,
+    isPerfect: scoring.isPerfect,
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-teal-900 via-cyan-900 to-blue-900">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 bg-black/30">
-        <button
-          onClick={() => router.push('/')}
-          className="p-2 text-white/60 hover:text-white transition-colors"
-        >
-          <X size={24} />
-        </button>
-        <div className="text-center">
-          <h1 className="font-bold text-white">Category Sort</h1>
-          <p className="text-xs text-white/60">{challengeIndex + 1} of {totalChallenges}</p>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 rounded-xl">
-          <Zap size={18} className="text-yellow-400" />
-          <span className="font-bold text-yellow-400">{score}</span>
-        </div>
-      </header>
+    <>
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
 
-      <main className="p-4 pb-32">
-        {/* Challenge info */}
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="bg-white/10 backdrop-blur rounded-2xl p-4 mb-4 border border-white/20"
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Layers size={20} className="text-teal-400" />
-            <span className="text-sm px-2 py-1 bg-teal-500/30 text-teal-300 rounded-full">
-              {challenge.subject}
-            </span>
-          </div>
-          <h2 className="text-xl font-bold text-white">{challenge.title}</h2>
-          <p className="text-sm text-white/60 mt-1">
-            Tap an item, then tap a category to sort it
-          </p>
-        </motion.div>
-
-        {/* Unsorted items */}
-        {!showResult && unsortedItems.length > 0 && (
-          <div className="mb-4">
-            <p className="text-sm text-white/60 mb-2">Items to sort:</p>
-            <div className="flex flex-wrap gap-2">
-              {unsortedItems.map((item) => (
-                <motion.button
-                  key={item.id}
-                  onClick={() => handleItemClick(item)}
-                  className={`px-4 py-2 rounded-xl font-medium transition-all ${
-                    selectedItem?.id === item.id
-                      ? 'bg-yellow-400 text-yellow-900 scale-105'
-                      : 'bg-white/20 text-white hover:bg-white/30'
-                  }`}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {item.text}
-                </motion.button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Categories */}
-        <div className="space-y-3">
-          {challenge.categories.map((category, index) => {
-            const items = sortedItems[category] || [];
-            const isCorrectCategory = showResult && items.every(i => i.category === category);
-
-            return (
+      <GameFrame
+        title="Category Sort"
+        subtitle="Sort items into the correct categories!"
+        icon={<Layers size={40} className="text-teal-400" />}
+        color="teal"
+        gameState={gameState}
+        onStart={handleStart}
+        onRestart={handleRestart}
+        time={timer.time}
+        totalTime={GAME_TIME}
+        score={scoring.score}
+        combo={scoring.combo}
+        stats={stats}
+      >
+        <div style={shakeStyle} className="h-full flex flex-col">
+          {challenge ? (
+            <div className="flex-1 overflow-auto pb-24">
+              {/* Challenge info */}
               <motion.div
-                key={category}
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: index * 0.1 }}
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-4"
               >
-                <button
-                  onClick={() => handleCategoryClick(category)}
-                  disabled={showResult || !selectedItem}
-                  className={`w-full p-4 rounded-2xl border-2 border-dashed transition-all text-left ${
-                    showResult
-                      ? isCorrectCategory
-                        ? 'bg-green-500/20 border-green-400'
-                        : 'bg-red-500/20 border-red-400'
-                      : selectedItem
-                      ? 'bg-white/10 border-yellow-400 hover:bg-white/20'
-                      : 'bg-white/5 border-white/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-white">{category}</span>
-                    {showResult && (
-                      isCorrectCategory ? (
-                        <CheckCircle size={20} className="text-green-400" />
-                      ) : (
-                        <XCircle size={20} className="text-red-400" />
-                      )
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2 min-h-[40px]">
-                    {items.map((item) => {
-                      const isCorrect = item.category === category;
-                      return (
-                        <motion.span
-                          key={item.id}
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!showResult) handleRemoveItem(item, category);
-                          }}
-                          className={`px-3 py-1 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
-                            showResult
-                              ? isCorrect
-                                ? 'bg-green-500 text-white'
-                                : 'bg-red-500 text-white'
-                              : 'bg-white/30 text-white hover:bg-white/40'
-                          }`}
-                        >
-                          {item.text}
-                          {showResult && !isCorrect && (
-                            <span className="ml-1 text-xs">→ {item.category}</span>
-                          )}
-                        </motion.span>
-                      );
-                    })}
-                    {items.length === 0 && (
-                      <span className="text-white/30 text-sm">Drop items here</span>
-                    )}
-                  </div>
-                </button>
+                <div className="flex items-center gap-2 mb-2">
+                  <Layers size={20} className="text-teal-400" />
+                  <span className="text-sm px-2 py-1 bg-teal-500/20 text-teal-300 rounded-full">
+                    {challenge.subject}
+                  </span>
+                  <span className="text-sm text-gray-500 ml-auto">
+                    {challengeIndex + 1} of {TOTAL_CHALLENGES}
+                  </span>
+                </div>
+                <h2 className="text-xl font-bold text-white">{challenge.title}</h2>
+                <p className="text-sm text-gray-400 mt-1">
+                  Tap an item, then tap a category to sort it
+                </p>
               </motion.div>
-            );
-          })}
-        </div>
 
-        {/* Action button */}
-        {!showResult ? (
-          <motion.button
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            onClick={checkAnswers}
-            disabled={!allSorted}
-            className="w-full mt-6 py-4 font-bold text-white bg-gradient-to-r from-teal-400 to-cyan-500 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {allSorted ? 'Check Answers' : `Sort all items (${unsortedItems.length} left)`}
-          </motion.button>
-        ) : (
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            className="mt-6"
-          >
-            <div className={`p-4 rounded-xl mb-4 ${
-              correctCount === challenge.items.length ? 'bg-green-500/20' : 'bg-white/10'
-            }`}>
-              <p className="font-bold text-white text-center">
-                {correctCount}/{challenge.items.length} correct = +{correctCount * 10} XP
-              </p>
-            </div>
-
-            <button
-              onClick={nextChallenge}
-              className="w-full py-4 font-bold text-white bg-gradient-to-r from-teal-400 to-cyan-500 rounded-xl flex items-center justify-center gap-2"
-            >
-              {challengeIndex < totalChallenges - 1 ? (
-                <>
-                  Next Category
-                  <ArrowRight size={20} />
-                </>
-              ) : (
-                'See Results'
+              {/* Unsorted items */}
+              {!showResult && unsortedItems.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-sm text-gray-400 mb-2">Items to sort:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {unsortedItems.map((item) => (
+                      <motion.button
+                        key={item.id}
+                        onClick={() => handleItemClick(item)}
+                        className={cn(
+                          'px-4 py-2 rounded-xl font-medium transition-all',
+                          selectedItem?.id === item.id
+                            ? 'bg-yellow-400 text-yellow-900 scale-105'
+                            : 'bg-white/10 text-white hover:bg-white/20'
+                        )}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {item.text}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
               )}
-            </button>
-          </motion.div>
-        )}
-      </main>
-    </div>
+
+              {/* Categories */}
+              <div className="space-y-3">
+                {challenge.categories.map((category, index) => {
+                  const items = sortedItems[category] || [];
+                  const isCorrectCategory = showResult && items.every(i => i.category === category);
+
+                  return (
+                    <motion.div
+                      key={category}
+                      initial={{ x: -20, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: index * 0.1 }}
+                    >
+                      <button
+                        onClick={() => handleCategoryClick(category)}
+                        disabled={showResult || !selectedItem}
+                        className={cn(
+                          'w-full p-4 rounded-2xl border-2 border-dashed transition-all text-left',
+                          showResult
+                            ? isCorrectCategory
+                              ? 'bg-green-500/10 border-green-500/50'
+                              : 'bg-red-500/10 border-red-500/50'
+                            : selectedItem
+                            ? 'bg-white/5 border-yellow-400/50 hover:bg-white/10'
+                            : 'bg-white/5 border-white/20'
+                        )}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-white">{category}</span>
+                          {showResult && (
+                            isCorrectCategory ? (
+                              <CheckCircle size={20} className="text-green-400" />
+                            ) : (
+                              <XCircle size={20} className="text-red-400" />
+                            )
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 min-h-[40px]">
+                          {items.map((item) => {
+                            const isCorrect = item.category === category;
+                            return (
+                              <motion.span
+                                key={item.id}
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!showResult) handleRemoveItem(item, category);
+                                }}
+                                className={cn(
+                                  'px-3 py-1 rounded-lg text-sm font-medium cursor-pointer transition-colors',
+                                  showResult
+                                    ? isCorrect
+                                      ? 'bg-green-500/20 text-green-400'
+                                      : 'bg-red-500/20 text-red-400'
+                                    : 'bg-white/20 text-white hover:bg-white/30'
+                                )}
+                              >
+                                {item.text}
+                                {showResult && !isCorrect && (
+                                  <span className="ml-1 text-xs opacity-70">
+                                    {' -> '}{item.category}
+                                  </span>
+                                )}
+                              </motion.span>
+                            );
+                          })}
+                          {items.length === 0 && (
+                            <span className="text-gray-500 text-sm">Drop items here</span>
+                          )}
+                        </div>
+                      </button>
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {/* Action button */}
+              <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#0f0f17] via-[#0f0f17] to-transparent">
+                {!showResult ? (
+                  <motion.button
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    onClick={checkAnswers}
+                    disabled={!allSorted}
+                    className={cn(
+                      'w-full py-4 font-bold text-white rounded-xl transition-all',
+                      allSorted
+                        ? 'bg-gradient-to-r from-teal-500 to-cyan-500'
+                        : 'bg-white/10 text-gray-400'
+                    )}
+                  >
+                    {allSorted ? 'Check Answers' : `Sort all items (${unsortedItems.length} left)`}
+                  </motion.button>
+                ) : (
+                  <motion.div
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="space-y-3"
+                  >
+                    <div className={cn(
+                      'p-4 rounded-xl',
+                      correctCount === challenge.items.length
+                        ? 'bg-green-500/10 border border-green-500/30'
+                        : 'bg-white/5 border border-white/10'
+                    )}>
+                      <p className="font-bold text-white text-center">
+                        {correctCount}/{challenge.items.length} correct
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={nextChallenge}
+                      className="w-full py-4 font-bold text-white bg-gradient-to-r from-teal-500 to-cyan-500 rounded-xl flex items-center justify-center gap-2"
+                    >
+                      {challengeIndex < TOTAL_CHALLENGES - 1 ? (
+                        <>
+                          Next Category
+                          <ArrowRight size={20} />
+                        </>
+                      ) : (
+                        'See Results'
+                      )}
+                    </button>
+                  </motion.div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-gray-400">Loading challenge...</p>
+            </div>
+          )}
+        </div>
+      </GameFrame>
+    </>
   );
 }

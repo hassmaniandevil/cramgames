@@ -1,20 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore, YearGroup } from '@/lib/stores/userStore';
+import { Atom } from 'lucide-react';
 import {
-  X,
-  Zap,
-  Clock,
-  Trophy,
-  RotateCcw,
-  Home,
-  Flame,
-  Atom,
-} from 'lucide-react';
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import { useUserStore, YearGroup } from '@/lib/stores/userStore';
+import { cn } from '@/lib/utils/cn';
 
 interface Element {
   symbol: string;
@@ -190,343 +191,211 @@ function generateQuestion(elements: Element[]): Question {
 }
 
 export default function ElementHuntPage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
   const { profile } = useUserStore();
 
   // Determine difficulty based on user's year group
   const difficulty = useMemo(() => getDifficultyFromYearGroup(profile?.yearGroup), [profile?.yearGroup]);
   const elements = useMemo(() => getElementsForDifficulty(difficulty), [difficulty]);
 
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
-  const [timeLeft, setTimeLeft] = useState(60);
-  const [score, setScore] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
+  // Game framework hooks
+  const { gameState, isPlaying, startGame, finishGame, resetGame } = useGameState();
+  const timer = useGameTimer({
+    initialTime: 60,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+  const scoring = useGameScore({ basePointsPerQuestion: 100 });
+  const audio = useGameAudio();
+  const { shake, shakeStyle } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
+
+  // Game-specific state
   const [question, setQuestion] = useState<Question | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
-  const [totalAnswered, setTotalAnswered] = useState(0);
-  const [correctAnswers, setCorrectAnswers] = useState(0);
 
+  // Generate new question
   const newQuestion = useCallback(() => {
     setQuestion(generateQuestion(elements));
     setSelectedAnswer(null);
     setShowFeedback(false);
   }, [elements]);
 
-  const startGame = () => {
-    setGameState('playing');
-    setTimeLeft(60);
-    setScore(0);
-    setCombo(0);
-    setMaxCombo(0);
-    setTotalAnswered(0);
-    setCorrectAnswers(0);
+  // Handle game start
+  const handleStart = useCallback(() => {
+    startGame();
+    timer.reset(60);
+    timer.start();
+    scoring.reset();
     newQuestion();
-  };
+  }, [startGame, timer, scoring, newQuestion]);
 
-  // Timer
-  useEffect(() => {
-    if (gameState !== 'playing') return;
+  // Handle restart
+  const handleRestart = useCallback(() => {
+    resetGame();
+    setTimeout(handleStart, 100);
+  }, [resetGame, handleStart]);
 
-    const timer = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          setGameState('finished');
-          addXP(score);
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [gameState, score, addXP]);
-
-  const handleAnswer = (answer: string) => {
+  // Handle answer selection
+  const handleAnswer = useCallback((answer: string) => {
     if (showFeedback || !question) return;
 
     setSelectedAnswer(answer);
     setShowFeedback(true);
-    setTotalAnswered(t => t + 1);
 
     const correct = answer === question.correctAnswer;
     setIsCorrect(correct);
 
     if (correct) {
-      const comboBonus = Math.floor(combo / 3) * 5;
-      const points = 12 + comboBonus;
-      setScore(s => s + points);
-      setCombo(c => c + 1);
-      setMaxCombo(m => Math.max(m, combo + 1));
-      setCorrectAnswers(c => c + 1);
+      scoring.recordCorrect();
+      audio.playCorrect(scoring.combo);
+      emitCorrect();
     } else {
-      setCombo(0);
+      scoring.recordWrong();
+      audio.playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
     }
 
+    // Auto advance
     setTimeout(() => {
       newQuestion();
     }, correct ? 400 : 1200);
+  }, [showFeedback, question, scoring, audio, shake, emitCorrect, emitWrong, newQuestion]);
+
+  // Generate initial question when playing starts
+  useEffect(() => {
+    if (isPlaying && !question) {
+      newQuestion();
+    }
+  }, [isPlaying, question, newQuestion]);
+
+  // Calculate stats for results
+  const stats = {
+    score: scoring.score,
+    correctAnswers: scoring.correctAnswers,
+    wrongAnswers: scoring.wrongAnswers,
+    combo: scoring.combo,
+    maxCombo: scoring.maxCombo,
+    accuracy: scoring.accuracy,
+    xpEarned: scoring.xpEarned,
+    isPerfect: scoring.isPerfect,
   };
 
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-sm"
-        >
-          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-pastel-green flex items-center justify-center">
-            <Atom size={48} className="text-correct" />
-          </div>
-
-          <h1 className="text-3xl font-bold text-text-primary mb-2">
-            Element Hunt
-          </h1>
-          <p className="text-text-secondary mb-4">
-            Test your periodic table knowledge! Symbols, names, atomic numbers & groups.
-          </p>
-
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/20 border border-accent/30 rounded-full mb-6">
-            <span className="text-sm font-medium text-accent">
-              Difficulty: {difficulty}
-            </span>
-            <span className="text-xs text-text-muted">
-              ({elements.length} elements)
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="card p-4 text-center">
-              <Clock size={24} className="text-accent mx-auto mb-2" />
-              <p className="text-sm text-text-muted">60 seconds</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Flame size={24} className="text-streak mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Build combos</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Zap size={24} className="text-xp mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Learn facts</p>
-            </div>
-          </div>
-
-          <button
-            onClick={startGame}
-            className="w-full btn-primary py-4 text-lg"
-          >
-            Start Hunt
-          </button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Finished screen
-  if (gameState === 'finished') {
-    const accuracy = totalAnswered > 0 ? Math.round((correctAnswers / totalAnswered) * 100) : 0;
-
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-green flex items-center justify-center"
-          >
-            <Trophy size={40} className="text-correct" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            Element Expert!
-          </h1>
-          <p className="text-text-secondary mb-6">
-            Great periodic table knowledge!
-          </p>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-xp">{score}</div>
-              <div className="text-xs text-text-muted">Score</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-streak">{maxCombo}x</div>
-              <div className="text-xs text-text-muted">Max Combo</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-correct">{accuracy}%</div>
-              <div className="text-xs text-text-muted">Accuracy</div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={startGame}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              Hunt Again
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full card p-4 text-text-primary font-semibold flex items-center justify-center gap-2 hover:bg-surface-elevated transition-colors"
-            >
-              <Home size={20} />
-              Home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Playing screen
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="glass sticky top-0 z-40 safe-top">
-        <div className="flex items-center justify-between px-4 py-3">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 -ml-2 text-text-muted hover:text-text-primary transition-colors"
-          >
-            <X size={24} />
-          </button>
+    <>
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
 
-          <motion.div
-            className="flex items-center gap-2 px-4 py-2 bg-pastel-green rounded-xl"
-            animate={timeLeft <= 10 ? { scale: [1, 1.1, 1] } : {}}
-            transition={{ repeat: timeLeft <= 10 ? Infinity : 0, duration: 0.5 }}
-          >
-            <Clock size={20} className={timeLeft <= 10 ? 'text-incorrect' : 'text-correct'} />
-            <span className={`font-mono font-bold text-lg ${timeLeft <= 10 ? 'text-incorrect' : 'text-correct'}`}>
-              {timeLeft}s
-            </span>
-          </motion.div>
+      <GameFrame
+        title="Element Hunt"
+        subtitle="Test your periodic table knowledge!"
+        icon={<Atom size={40} className="text-green-400" />}
+        color="green"
+        gameState={gameState}
+        onStart={handleStart}
+        onRestart={handleRestart}
+        time={timer.time}
+        totalTime={60}
+        score={scoring.score}
+        combo={scoring.combo}
+        stats={stats}
+        zoneId="chemistry-periodic-table"
+      >
+        <div style={shakeStyle} className="h-full flex flex-col items-center justify-center">
+          {question && (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={question.element.symbol + question.type}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+                className="w-full max-w-md"
+              >
+                {/* Element display */}
+                <div className="flex justify-center mb-4">
+                  <motion.div
+                    initial={{ rotateY: 180 }}
+                    animate={{ rotateY: 0 }}
+                    className="w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg"
+                  >
+                    <span className="text-3xl font-bold text-white">
+                      {question.type === 'name-to-symbol' ? '?' : question.element.symbol}
+                    </span>
+                  </motion.div>
+                </div>
 
-          <div className="flex items-center gap-2">
-            <Zap size={20} className="text-xp" />
-            <span className="font-bold text-xp">{score}</span>
-          </div>
-        </div>
+                {/* Question */}
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-6 text-center">
+                  <p className="text-xl font-bold text-white">
+                    {question.question}
+                  </p>
+                </div>
 
-        {combo >= 2 && (
-          <div className="px-4 pb-2">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex justify-center"
-            >
-              <div className="px-4 py-1 bg-gradient-to-r from-streak/20 to-amber-500/20 border border-streak/30 rounded-full">
-                <span className="font-bold text-streak flex items-center gap-1">
-                  <Flame size={16} /> {combo}x Combo!
-                </span>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </header>
+                {/* Options */}
+                <div className="grid grid-cols-2 gap-3">
+                  {question.options.map((option, index) => {
+                    const isSelected = selectedAnswer === option;
+                    const isCorrectAnswer = option === question.correctAnswer;
 
-      {/* Main content */}
-      <main className="flex-1 flex flex-col items-center justify-center p-6">
-        {question && (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={question.element.symbol + question.type}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
-              className="w-full max-w-md"
-            >
-              {/* Element display */}
-              <div className="flex justify-center mb-4">
-                <motion.div
-                  initial={{ rotateY: 180 }}
-                  animate={{ rotateY: 0 }}
-                  className="w-20 h-20 bg-gradient-to-br from-accent to-purple-600 rounded-xl flex items-center justify-center shadow-lg"
-                >
-                  <span className="text-3xl font-bold text-white">
-                    {question.type === 'name-to-symbol' ? '?' : question.element.symbol}
-                  </span>
-                </motion.div>
-              </div>
+                    return (
+                      <motion.button
+                        key={index}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        onClick={() => handleAnswer(option)}
+                        disabled={showFeedback}
+                        className={cn(
+                          'p-4 rounded-xl font-semibold text-lg transition-all',
+                          'border-2',
+                          showFeedback
+                            ? isCorrectAnswer
+                              ? 'bg-green-500/20 border-green-500 text-green-400'
+                              : isSelected
+                                ? 'bg-red-500/20 border-red-500 text-red-400'
+                                : 'bg-white/5 border-white/10 text-gray-400'
+                            : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-green-500/50'
+                        )}
+                      >
+                        {option}
+                      </motion.button>
+                    );
+                  })}
+                </div>
 
-              {/* Question */}
-              <div className="card p-6 mb-6 text-center">
-                <p className="text-xl font-bold text-text-primary">
-                  {question.question}
-                </p>
-              </div>
-
-              {/* Options */}
-              <div className="grid grid-cols-2 gap-3">
-                {question.options.map((option, index) => {
-                  const isSelected = selectedAnswer === option;
-                  const isCorrectAnswer = option === question.correctAnswer;
-
-                  let className = 'option-card justify-center text-lg font-semibold';
-                  if (showFeedback) {
-                    if (isCorrectAnswer) className += ' correct';
-                    else if (isSelected) className += ' wrong';
-                  }
-
-                  return (
-                    <motion.button
-                      key={index}
+                {/* Feedback with fun fact */}
+                <AnimatePresence>
+                  {showFeedback && (
+                    <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      onClick={() => handleAnswer(option)}
-                      className={className}
-                      disabled={showFeedback}
+                      exit={{ opacity: 0 }}
+                      className={cn(
+                        'mt-4 p-4 rounded-xl',
+                        isCorrect
+                          ? 'bg-green-500/20'
+                          : 'bg-red-500/20'
+                      )}
                     >
-                      {option}
-                    </motion.button>
-                  );
-                })}
-              </div>
-
-              {/* Feedback with fun fact */}
-              <AnimatePresence>
-                {showFeedback && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className={`mt-4 p-4 rounded-xl ${
-                      isCorrect ? 'bg-pastel-green' : 'bg-pastel-pink'
-                    }`}
-                  >
-                    <p className={`font-bold text-center ${isCorrect ? 'text-correct' : 'text-incorrect'}`}>
-                      {isCorrect ? `+${12 + Math.floor(combo / 3) * 5} points!` : `Answer: ${question.correctAnswer}`}
-                    </p>
-                    <p className="text-sm text-text-secondary text-center mt-2">
-                      {question.element.fact}
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          </AnimatePresence>
-        )}
-      </main>
-    </div>
+                      <p className={cn(
+                        'font-bold text-center',
+                        isCorrect ? 'text-green-400' : 'text-red-400'
+                      )}>
+                        {isCorrect ? `+${scoring.score} points!` : `Answer: ${question.correctAnswer}`}
+                      </p>
+                      <p className="text-sm text-gray-400 text-center mt-2">
+                        {question.element.fact}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            </AnimatePresence>
+          )}
+        </div>
+      </GameFrame>
+    </>
   );
 }

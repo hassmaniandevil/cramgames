@@ -1,22 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
 import { useLoreStore } from '@/lib/stores/loreStore';
 import { useUserStore, YearGroup } from '@/lib/stores/userStore';
 import {
-  X,
-  Zap,
-  Trophy,
-  RotateCcw,
-  Home,
+  GameFrame,
+  useGameState,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
+import {
   Swords,
   Shield,
   Sword,
   Heart,
   Sparkles,
+  RotateCcw,
+  Home,
+  Trophy,
 } from 'lucide-react';
 
 interface BossQuestion {
@@ -47,7 +54,7 @@ const BOSSES: Boss[] = [
     name: 'PROFESSOR PROTON',
     title: 'Guardian of the Atom',
     maxHp: 100,
-    emoji: '⚛️',
+    emoji: '\u269B\uFE0F',
     color: 'from-blue-500 to-cyan-500',
     questions: [
       { question: 'What particle has a positive charge?', options: ['Electron', 'Proton', 'Neutron', 'Photon'], correctIndex: 1, damage: 25 },
@@ -59,7 +66,7 @@ const BOSSES: Boss[] = [
       id: 'boss-proton',
       subject: 'physics',
       title: 'The Proton\'s Secret',
-      content: 'Protons are not fundamental particles - they\'re made of three quarks held together by gluons. The mass of these quarks accounts for only 1% of the proton\'s mass. The other 99% comes from the energy of the gluon field, proving Einstein\'s E=mc² in the most intimate way.',
+      content: 'Protons are not fundamental particles - they\'re made of three quarks held together by gluons. The mass of these quarks accounts for only 1% of the proton\'s mass. The other 99% comes from the energy of the gluon field, proving Einstein\'s E=mc\u00B2 in the most intimate way.',
       rarity: 'legendary',
     },
   },
@@ -67,7 +74,7 @@ const BOSSES: Boss[] = [
     name: 'DR. HELIX',
     title: 'Master of DNA',
     maxHp: 100,
-    emoji: '🧬',
+    emoji: '\uD83E\uDDEC',
     color: 'from-green-500 to-emerald-500',
     questions: [
       { question: 'What sugar is found in DNA?', options: ['Glucose', 'Ribose', 'Deoxyribose', 'Fructose'], correctIndex: 2, damage: 25 },
@@ -87,7 +94,7 @@ const BOSSES: Boss[] = [
     name: 'BARON VON BEAKER',
     title: 'Alchemist Supreme',
     maxHp: 100,
-    emoji: '⚗️',
+    emoji: '\u2697\uFE0F',
     color: 'from-amber-500 to-orange-500',
     questions: [
       { question: 'What is the pH of a neutral solution?', options: ['0', '7', '14', '1'], correctIndex: 1, damage: 25 },
@@ -107,13 +114,13 @@ const BOSSES: Boss[] = [
     name: 'COUNTESS CALCULUS',
     title: 'Queen of Numbers',
     maxHp: 100,
-    emoji: '👑',
+    emoji: '\uD83D\uDC51',
     color: 'from-violet-500 to-purple-500',
     questions: [
       { question: 'What is 15% of 80?', options: ['8', '12', '15', '20'], correctIndex: 1, damage: 25 },
       { question: 'Solve: 3x + 7 = 22', options: ['x = 3', 'x = 5', 'x = 7', 'x = 15'], correctIndex: 1, damage: 25 },
-      { question: 'What is √169?', options: ['11', '12', '13', '14'], correctIndex: 2, damage: 25 },
-      { question: 'What is the area of a circle with radius 5?', options: ['25π', '10π', '5π', '50π'], correctIndex: 0, damage: 25 },
+      { question: 'What is \u221A169?', options: ['11', '12', '13', '14'], correctIndex: 2, damage: 25 },
+      { question: 'What is the area of a circle with radius 5?', options: ['25\u03C0', '10\u03C0', '5\u03C0', '50\u03C0'], correctIndex: 0, damage: 25 },
     ],
     loreReward: {
       id: 'boss-calculus',
@@ -138,14 +145,33 @@ function getDifficultyFromYearGroup(yearGroup: YearGroup | undefined): { level: 
 
 export default function BossBattlePage() {
   const router = useRouter();
-  const { addXP } = useProgressStore();
   const { unlockFragment } = useLoreStore();
   const { profile } = useUserStore();
 
   const yearGroup = profile?.yearGroup;
   const difficulty = getDifficultyFromYearGroup(yearGroup);
 
-  const [gameState, setGameState] = useState<'select' | 'battle' | 'victory' | 'defeat'>('select');
+  // Game framework hooks
+  const { gameState, isPlaying, startGame, finishGame, resetGame } = useGameState();
+  const {
+    score,
+    combo,
+    maxCombo,
+    correctAnswers,
+    wrongAnswers,
+    accuracy,
+    xpEarned,
+    isPerfect,
+    recordCorrect,
+    recordWrong,
+    reset: resetScore,
+  } = useGameScore({ basePointsPerQuestion: 100 });
+  const { playCorrect, playWrong, playFinish } = useGameAudio();
+  const { shake, shakeStyle } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong, emitConfetti } = useParticles();
+
+  // Boss battle specific state
+  const [battlePhase, setBattlePhase] = useState<'select' | 'battle' | 'victory' | 'defeat'>('select');
   const [currentBoss, setCurrentBoss] = useState<Boss | null>(null);
   const [bossHp, setBossHp] = useState(100);
   const [playerHp, setPlayerHp] = useState(100);
@@ -153,24 +179,21 @@ export default function BossBattlePage() {
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
-  const [combo, setCombo] = useState(0);
-  const [score, setScore] = useState(0);
-  const [shakeScreen, setShakeScreen] = useState(false);
   const [defeatedBosses, setDefeatedBosses] = useState<string[]>([]);
 
-  const startBattle = (boss: Boss) => {
+  const startBattle = useCallback((boss: Boss) => {
     setCurrentBoss(boss);
     setBossHp(boss.maxHp);
     setPlayerHp(100);
     setQuestionIndex(0);
     setSelectedAnswer(null);
     setShowResult(false);
-    setCombo(0);
-    setScore(0);
-    setGameState('battle');
-  };
+    resetScore();
+    setBattlePhase('battle');
+    startGame();
+  }, [resetScore, startGame]);
 
-  const handleAnswer = (index: number) => {
+  const handleAnswer = useCallback((index: number) => {
     if (showResult || !currentBoss) return;
 
     setSelectedAnswer(index);
@@ -182,31 +205,42 @@ export default function BossBattlePage() {
     if (correct) {
       // Damage boss
       const damage = question.damage + combo * 5;
-      setBossHp(prev => Math.max(0, prev - damage));
-      setCombo(c => c + 1);
-      setScore(s => s + 50 + combo * 10);
+      const newBossHp = Math.max(0, bossHp - damage);
+      setBossHp(newBossHp);
+      recordCorrect();
+      playCorrect(combo + 1);
+      emitCorrect();
     } else {
       // Boss damages player
-      setPlayerHp(prev => Math.max(0, prev - 25));
-      setCombo(0);
-      setShakeScreen(true);
-      setTimeout(() => setShakeScreen(false), 500);
+      const newPlayerHp = Math.max(0, playerHp - 25);
+      setPlayerHp(newPlayerHp);
+      recordWrong();
+      playWrong();
+      emitWrong();
+      shake(ShakePresets.wrong);
     }
 
     setTimeout(() => {
-      if (correct && bossHp - (question.damage + combo * 5) <= 0) {
+      const question = currentBoss.questions[questionIndex];
+      const damage = question.damage + combo * 5;
+      const newBossHp = Math.max(0, bossHp - damage);
+      const newPlayerHp = Math.max(0, playerHp - 25);
+
+      if (correct && newBossHp <= 0) {
         // Victory!
-        setGameState('victory');
-        addXP(score + 200);
+        setBattlePhase('victory');
+        finishGame();
+        playFinish(isPerfect, true);
+        emitConfetti();
         unlockFragment({
           ...currentBoss.loreReward,
           unlocked: true,
         });
         setDefeatedBosses(prev => [...prev, currentBoss.name]);
-      } else if (!correct && playerHp - 25 <= 0) {
+      } else if (!correct && newPlayerHp <= 0) {
         // Defeat
-        setGameState('defeat');
-        addXP(Math.floor(score / 2));
+        setBattlePhase('defeat');
+        finishGame();
       } else if (questionIndex < currentBoss.questions.length - 1) {
         // Next question
         setQuestionIndex(i => i + 1);
@@ -215,22 +249,50 @@ export default function BossBattlePage() {
       } else {
         // All questions done but boss not dead - boss wins
         if (bossHp > 0) {
-          setGameState('defeat');
-          addXP(Math.floor(score / 2));
+          setBattlePhase('defeat');
+          finishGame();
         }
       }
     }, 1500);
+  }, [showResult, currentBoss, questionIndex, combo, bossHp, playerHp, recordCorrect, recordWrong, playCorrect, playWrong, emitCorrect, emitWrong, shake, finishGame, playFinish, isPerfect, emitConfetti, unlockFragment]);
+
+  const handleRestart = useCallback(() => {
+    setBattlePhase('select');
+    setCurrentBoss(null);
+    resetGame();
+    resetScore();
+  }, [resetGame, resetScore]);
+
+  const handleRetryBoss = useCallback(() => {
+    if (currentBoss) {
+      startBattle(currentBoss);
+    }
+  }, [currentBoss, startBattle]);
+
+  // Stats for GameFrame
+  const stats = {
+    score,
+    correctAnswers,
+    wrongAnswers,
+    combo,
+    maxCombo,
+    accuracy,
+    xpEarned: battlePhase === 'victory' ? xpEarned + 200 : Math.floor(xpEarned / 2),
+    isPerfect,
   };
 
-  // Boss selection
-  if (gameState === 'select') {
+  // Boss selection screen
+  if (battlePhase === 'select') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 p-6">
+      <div className="min-h-screen bg-[#0f0f17] p-6" style={shakeStyle}>
+        <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+
         <button
           onClick={() => router.push('/')}
-          className="absolute top-4 left-4 p-2 text-white/60 hover:text-white"
+          className="absolute top-4 left-4 p-2 text-gray-400 hover:text-white"
         >
-          <X size={24} />
+          <span className="sr-only">Close</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
 
         <div className="max-w-md mx-auto pt-12">
@@ -243,7 +305,7 @@ export default function BossBattlePage() {
               <Swords size={40} className="text-white" />
             </div>
             <h1 className="text-3xl font-black text-white mb-2">BOSS BATTLE</h1>
-            <p className="text-white/60">Defeat bosses to unlock legendary lore!</p>
+            <p className="text-gray-400">Defeat bosses to unlock legendary lore!</p>
             <div className={`mt-3 inline-flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full ${difficulty.color}`}>
               <Shield size={16} />
               <span className="font-bold text-sm">{difficulty.label}</span>
@@ -272,10 +334,10 @@ export default function BossBattlePage() {
                         <h3 className="font-bold text-white">{boss.name}</h3>
                         {isDefeated && <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">DEFEATED</span>}
                       </div>
-                      <p className="text-sm text-white/60">{boss.title}</p>
+                      <p className="text-sm text-gray-400">{boss.title}</p>
                       <div className="flex items-center gap-2 mt-2">
                         <Heart size={14} className="text-red-400" />
-                        <span className="text-xs text-white/60">{boss.maxHp} HP</span>
+                        <span className="text-xs text-gray-400">{boss.maxHp} HP</span>
                         <Sparkles size={14} className="text-amber-400 ml-2" />
                         <span className="text-xs text-amber-400">Legendary Lore</span>
                       </div>
@@ -291,22 +353,23 @@ export default function BossBattlePage() {
   }
 
   // Battle screen
-  if (gameState === 'battle' && currentBoss) {
+  if (battlePhase === 'battle' && currentBoss && isPlaying) {
     const question = currentBoss.questions[questionIndex];
 
     return (
-      <motion.div
-        className={`min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex flex-col ${shakeScreen ? 'animate-shake' : ''}`}
-        animate={shakeScreen ? { x: [-10, 10, -10, 10, 0] } : {}}
-        transition={{ duration: 0.4 }}
+      <div
+        className="min-h-screen bg-[#0f0f17] flex flex-col"
+        style={shakeStyle}
       >
+        <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+
         {/* Header */}
-        <header className="p-4 flex items-center justify-between">
-          <button onClick={() => router.push('/')} className="p-2 text-white/60">
-            <X size={24} />
+        <header className="p-4 flex items-center justify-between border-b border-white/10">
+          <button onClick={() => router.push('/')} className="p-2 text-gray-400 hover:text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
           <div className="flex items-center gap-2 px-4 py-2 bg-yellow-500/20 rounded-xl">
-            <Zap size={20} className="text-yellow-400" />
+            <Trophy size={20} className="text-yellow-400" />
             <span className="font-bold text-yellow-400">{score}</span>
           </div>
         </header>
@@ -326,11 +389,11 @@ export default function BossBattlePage() {
               {currentBoss.emoji}
             </motion.div>
             <h2 className="text-xl font-black text-white">{currentBoss.name}</h2>
-            <p className="text-sm text-white/60">{currentBoss.title}</p>
+            <p className="text-sm text-gray-400">{currentBoss.title}</p>
 
             {/* Boss HP */}
             <div className="mt-3 w-48 mx-auto">
-              <div className="flex justify-between text-xs text-white/60 mb-1">
+              <div className="flex justify-between text-xs text-gray-400 mb-1">
                 <span>HP</span>
                 <span>{bossHp}/{currentBoss.maxHp}</span>
               </div>
@@ -350,7 +413,7 @@ export default function BossBattlePage() {
               animate={{ scale: 1 }}
               className="mb-4 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-full"
             >
-              <span className="font-black text-white">🔥 {combo}x COMBO!</span>
+              <span className="font-black text-white">{combo}x COMBO!</span>
             </motion.div>
           )}
 
@@ -396,8 +459,8 @@ export default function BossBattlePage() {
           <div className="mt-6 w-full max-w-md">
             <div className="flex items-center gap-2 mb-1">
               <Shield size={16} className="text-blue-400" />
-              <span className="text-xs text-white/60">Your HP</span>
-              <span className="text-xs text-white/60 ml-auto">{playerHp}/100</span>
+              <span className="text-xs text-gray-400">Your HP</span>
+              <span className="text-xs text-gray-400 ml-auto">{playerHp}/100</span>
             </div>
             <div className="h-3 bg-black/50 rounded-full overflow-hidden border border-blue-500/50">
               <motion.div
@@ -431,16 +494,18 @@ export default function BossBattlePage() {
 
         {/* Progress */}
         <div className="p-4 text-center">
-          <span className="text-white/50 text-sm">Question {questionIndex + 1} of {currentBoss.questions.length}</span>
+          <span className="text-gray-500 text-sm">Question {questionIndex + 1} of {currentBoss.questions.length}</span>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   // Victory screen
-  if (gameState === 'victory' && currentBoss) {
+  if (battlePhase === 'victory' && currentBoss) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0f0f17] flex flex-col items-center justify-center p-6" style={shakeStyle}>
+        <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -456,7 +521,7 @@ export default function BossBattlePage() {
           </motion.div>
 
           <h1 className="text-4xl font-black text-white mb-2">VICTORY!</h1>
-          <p className="text-white/60 mb-6">You defeated {currentBoss.name}!</p>
+          <p className="text-gray-400 mb-6">You defeated {currentBoss.name}!</p>
 
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -468,23 +533,23 @@ export default function BossBattlePage() {
               <Sparkles className="text-amber-400" />
               <span className="font-bold text-amber-400">LEGENDARY LORE UNLOCKED!</span>
             </div>
-            <p className="text-sm text-white/80">{currentBoss.loreReward.title}</p>
+            <p className="text-sm text-gray-300">{currentBoss.loreReward.title}</p>
           </motion.div>
 
           <div className="grid grid-cols-2 gap-4 mb-8">
             <div className="bg-white/10 rounded-xl p-4">
-              <div className="text-3xl font-black text-yellow-400">{score + 200}</div>
-              <div className="text-xs text-white/60">XP EARNED</div>
+              <div className="text-3xl font-black text-yellow-400">{stats.xpEarned}</div>
+              <div className="text-xs text-gray-400">XP EARNED</div>
             </div>
             <div className="bg-white/10 rounded-xl p-4">
-              <div className="text-3xl font-black text-orange-400">{combo}</div>
-              <div className="text-xs text-white/60">MAX COMBO</div>
+              <div className="text-3xl font-black text-orange-400">{maxCombo}</div>
+              <div className="text-xs text-gray-400">MAX COMBO</div>
             </div>
           </div>
 
           <div className="space-y-3">
             <button
-              onClick={() => setGameState('select')}
+              onClick={handleRestart}
               className="w-full py-4 font-bold text-white bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl flex items-center justify-center gap-2"
             >
               <RotateCcw size={20} />
@@ -499,7 +564,7 @@ export default function BossBattlePage() {
             </button>
             <button
               onClick={() => router.push('/')}
-              className="w-full py-4 font-bold text-white/80 bg-white/10 rounded-xl flex items-center justify-center gap-2"
+              className="w-full py-4 font-bold text-gray-400 bg-white/10 rounded-xl flex items-center justify-center gap-2"
             >
               <Home size={20} />
               HOME
@@ -511,9 +576,11 @@ export default function BossBattlePage() {
   }
 
   // Defeat screen
-  if (gameState === 'defeat' && currentBoss) {
+  if (battlePhase === 'defeat' && currentBoss) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-red-900/50 to-slate-900 flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-[#0f0f17] flex flex-col items-center justify-center p-6" style={shakeStyle}>
+        <ParticleEffect trigger={particleTrigger} {...particleConfig} />
+
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -528,31 +595,31 @@ export default function BossBattlePage() {
           </motion.div>
 
           <h1 className="text-4xl font-black text-white mb-2">DEFEATED</h1>
-          <p className="text-white/60 mb-6">{currentBoss.name} was too strong...</p>
+          <p className="text-gray-400 mb-6">{currentBoss.name} was too strong...</p>
 
           <div className="bg-white/10 rounded-xl p-4 mb-8">
-            <div className="text-3xl font-black text-yellow-400">{Math.floor(score / 2)}</div>
-            <div className="text-xs text-white/60">XP EARNED</div>
+            <div className="text-3xl font-black text-yellow-400">{stats.xpEarned}</div>
+            <div className="text-xs text-gray-400">XP EARNED</div>
           </div>
 
           <div className="space-y-3">
             <button
-              onClick={() => startBattle(currentBoss)}
+              onClick={handleRetryBoss}
               className="w-full py-4 font-bold text-white bg-gradient-to-r from-red-500 to-orange-600 rounded-xl flex items-center justify-center gap-2"
             >
               <RotateCcw size={20} />
               TRY AGAIN
             </button>
             <button
-              onClick={() => setGameState('select')}
-              className="w-full py-4 font-bold text-white/80 bg-white/10 rounded-xl flex items-center justify-center gap-2"
+              onClick={handleRestart}
+              className="w-full py-4 font-bold text-gray-300 bg-white/10 rounded-xl flex items-center justify-center gap-2"
             >
               <Sword size={20} />
               CHOOSE DIFFERENT BOSS
             </button>
             <button
               onClick={() => router.push('/')}
-              className="w-full py-4 font-bold text-white/60 bg-white/5 rounded-xl flex items-center justify-center gap-2"
+              className="w-full py-4 font-bold text-gray-500 bg-white/5 rounded-xl flex items-center justify-center gap-2"
             >
               <Home size={20} />
               HOME

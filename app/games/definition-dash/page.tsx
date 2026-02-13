@@ -1,21 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { useProgressStore } from '@/lib/stores/progressStore';
-import { useUserStore, YearGroup } from '@/lib/stores/userStore';
+import { GitBranch, CheckCircle, Flame } from 'lucide-react';
 import {
-  X,
-  Zap,
-  Clock,
-  Trophy,
-  RotateCcw,
-  Home,
-  Flame,
-  GitBranch,
-  CheckCircle,
-} from 'lucide-react';
+  GameFrame,
+  useGameState,
+  useGameTimer,
+  useGameScore,
+  useGameAudio,
+  useScreenShake,
+  ShakePresets,
+  useParticles,
+  ParticleEffect,
+} from '@/components/game';
 
 interface TermPair {
   id: string;
@@ -97,82 +95,71 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
-// Helper function to determine difficulty level based on year group
-function getDifficultyFromYearGroup(yearGroup: YearGroup): { level: 'KS3' | 'GCSE' | 'A-Level'; label: string; color: string } {
-  if (yearGroup <= 9) {
-    return { level: 'KS3', label: 'KS3 Level', color: 'bg-pastel-green text-correct' };
-  } else if (yearGroup <= 11) {
-    return { level: 'GCSE', label: 'GCSE Level', color: 'bg-pastel-purple text-accent' };
-  } else {
-    return { level: 'A-Level', label: 'A-Level', color: 'bg-pastel-pink text-incorrect' };
-  }
-}
+const TOTAL_TIME = 60;
 
 export default function DefinitionDashPage() {
-  const router = useRouter();
-  const { addXP } = useProgressStore();
-  const { profile } = useUserStore();
+  // Game framework hooks
+  const { gameState, isPlaying, startGame: startGameState, finishGame, resetGame } = useGameState();
+  const {
+    score,
+    combo,
+    maxCombo,
+    correctAnswers,
+    wrongAnswers,
+    accuracy,
+    xpEarned,
+    isPerfect,
+    recordCorrect,
+    recordWrong,
+    reset: resetScore,
+  } = useGameScore({ basePointsPerQuestion: 100 });
+  const { time, start: startTimer, reset: resetTimer } = useGameTimer({
+    initialTime: TOTAL_TIME,
+    countDown: true,
+    onTimeUp: finishGame,
+  });
+  const { playCorrect, playWrong } = useGameAudio();
+  const { shake } = useScreenShake();
+  const { trigger: particleTrigger, config: particleConfig, emitCorrect, emitWrong } = useParticles();
 
-  // Get year group from user profile, default to 10 (GCSE) if not set
-  const yearGroup = profile?.yearGroup ?? 10;
-  const difficulty = getDifficultyFromYearGroup(yearGroup as YearGroup);
-
-  const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
+  // Game-specific state
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [shuffledTerms, setShuffledTerms] = useState<TermPair[]>([]);
   const [shuffledDefinitions, setShuffledDefinitions] = useState<TermPair[]>([]);
   const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
   const [matchedPairs, setMatchedPairs] = useState<Set<string>>(new Set());
   const [wrongMatch, setWrongMatch] = useState<string | null>(null);
-  const [score, setScore] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(60);
-  const [totalMatches, setTotalMatches] = useState(0);
-  const [wrongAttempts, setWrongAttempts] = useState(0);
 
   const currentRound = rounds[currentRoundIndex];
 
-  // Start game
-  const startGame = () => {
-    setGameState('playing');
-    setCurrentRoundIndex(0);
-    setScore(0);
-    setCombo(0);
-    setMaxCombo(0);
-    setTimeLeft(60);
-    setTotalMatches(0);
-    setWrongAttempts(0);
-    setupRound(0);
-  };
-
   // Setup round
-  const setupRound = (index: number) => {
+  const setupRound = useCallback((index: number) => {
     const round = rounds[index];
     setShuffledTerms(shuffleArray(round.pairs));
     setShuffledDefinitions(shuffleArray(round.pairs));
     setMatchedPairs(new Set());
     setSelectedTerm(null);
     setWrongMatch(null);
-  };
+  }, []);
 
-  // Timer
-  useEffect(() => {
-    if (gameState !== 'playing') return;
+  // Start game handler
+  const handleStartGame = useCallback(() => {
+    setCurrentRoundIndex(0);
+    setupRound(0);
+    resetScore();
+    resetTimer();
+    startGameState();
+    startTimer();
+  }, [setupRound, resetScore, resetTimer, startGameState, startTimer]);
 
-    const timer = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          addXP(score);
-          setGameState('finished');
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [gameState, score, addXP]);
+  // Restart game handler
+  const handleRestartGame = useCallback(() => {
+    resetGame();
+    setCurrentRoundIndex(0);
+    setupRound(0);
+    resetScore();
+    resetTimer();
+  }, [resetGame, setupRound, resetScore, resetTimer]);
 
   // Handle term click
   const handleTermClick = (termId: string) => {
@@ -186,23 +173,21 @@ export default function DefinitionDashPage() {
     if (!selectedTerm || matchedPairs.has(defPair.id)) return;
 
     if (selectedTerm === defPair.id) {
-      // Correct match!
+      // Correct match
       const newMatched = new Set(matchedPairs);
       newMatched.add(defPair.id);
       setMatchedPairs(newMatched);
       setSelectedTerm(null);
       setWrongMatch(null);
 
-      const comboBonus = Math.floor(combo / 2) * 5;
-      setScore(s => s + 10 + comboBonus);
-      setCombo(c => c + 1);
-      setMaxCombo(m => Math.max(m, combo + 1));
-      setTotalMatches(t => t + 1);
+      recordCorrect();
+      playCorrect(combo + 1);
+      emitCorrect();
 
       // Check if round complete
       if (newMatched.size === currentRound.pairs.length) {
-        // Bonus for completing round
-        setScore(s => s + 25);
+        // Bonus for completing round - record as extra correct
+        recordCorrect();
 
         // Move to next round or finish
         if (currentRoundIndex < rounds.length - 1) {
@@ -212,308 +197,176 @@ export default function DefinitionDashPage() {
           }, 500);
         } else {
           setTimeout(() => {
-            addXP(score + 25);
-            setGameState('finished');
+            finishGame();
           }, 500);
         }
       }
     } else {
       // Wrong match
       setWrongMatch(defPair.id);
-      setCombo(0);
-      setWrongAttempts(w => w + 1);
+      recordWrong();
+      playWrong();
+      shake(ShakePresets.wrong);
+      emitWrong();
       setTimeout(() => setWrongMatch(null), 500);
     }
   };
 
-  // Ready screen
-  if (gameState === 'ready') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center max-w-sm"
-        >
-          <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-pastel-green flex items-center justify-center">
-            <GitBranch size={48} className="text-correct" />
-          </div>
+  // Build stats for GameFrame
+  const stats = {
+    score,
+    correctAnswers,
+    wrongAnswers,
+    combo,
+    maxCombo,
+    accuracy,
+    xpEarned,
+    isPerfect,
+  };
 
-          <h1 className="text-3xl font-bold text-text-primary mb-2">
-            Definition Dash
-          </h1>
-          <p className="text-text-secondary mb-4">
-            Match terms to their definitions as fast as you can!
-          </p>
-
-          {/* Difficulty level badge */}
-          <div className="flex justify-center mb-6">
-            <span className={`px-4 py-2 rounded-full text-sm font-semibold ${difficulty.color}`}>
-              {difficulty.label}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="card p-4 text-center">
-              <Clock size={24} className="text-accent mx-auto mb-2" />
-              <p className="text-sm text-text-muted">60 seconds</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Flame size={24} className="text-streak mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Combo bonus</p>
-            </div>
-            <div className="card p-4 text-center">
-              <Zap size={24} className="text-xp mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Earn XP</p>
-            </div>
-          </div>
-
-          <button
-            onClick={startGame}
-            className="w-full btn-primary py-4 text-lg"
-          >
-            Start Game
-          </button>
-
-          <button
-            onClick={() => router.push('/')}
-            className="mt-4 text-text-muted hover:text-text-primary transition-colors"
-          >
-            Back to Home
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Finished screen
-  if (gameState === 'finished') {
-    const accuracy = totalMatches + wrongAttempts > 0
-      ? Math.round((totalMatches / (totalMatches + wrongAttempts)) * 100)
-      : 0;
-
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="card p-8 w-full max-w-md text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', delay: 0.2 }}
-            className="w-20 h-20 mx-auto mb-4 rounded-full bg-pastel-green flex items-center justify-center"
-          >
-            <Trophy size={40} className="text-correct" />
-          </motion.div>
-
-          <h1 className="text-2xl font-bold text-text-primary mb-2">
-            Great Work!
-          </h1>
-          <p className="text-text-secondary mb-6">
-            You completed {currentRoundIndex + 1} rounds!
-          </p>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-xp">{score}</div>
-              <div className="text-xs text-text-muted">Score</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-streak">{maxCombo}x</div>
-              <div className="text-xs text-text-muted">Max Combo</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-correct">{accuracy}%</div>
-              <div className="text-xs text-text-muted">Accuracy</div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <button
-              onClick={startGame}
-              className="w-full btn-primary flex items-center justify-center gap-2"
-            >
-              <RotateCcw size={20} />
-              Play Again
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="w-full card p-4 text-text-primary font-semibold flex items-center justify-center gap-2 hover:bg-surface-elevated transition-colors"
-            >
-              <Home size={20} />
-              Home
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Playing screen
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="glass sticky top-0 z-40 safe-top">
-        <div className="flex items-center justify-between px-4 py-3">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 -ml-2 text-text-muted hover:text-text-primary transition-colors"
-          >
-            <X size={24} />
-          </button>
+    <GameFrame
+      title="Definition Dash"
+      subtitle="Match terms to their definitions as fast as you can!"
+      icon={<GitBranch size={40} className="text-green-400" />}
+      color="green"
+      gameState={gameState}
+      onStart={handleStartGame}
+      onRestart={handleRestartGame}
+      time={time}
+      totalTime={TOTAL_TIME}
+      score={score}
+      combo={combo}
+      stats={stats}
+    >
+      {/* Particle effects */}
+      <ParticleEffect trigger={particleTrigger} {...particleConfig} />
 
-          {/* Timer */}
+      {/* Progress and round info */}
+      <div className="mb-4">
+        <div className="flex justify-between text-xs text-gray-400 mb-1">
+          <span>{currentRound.title}</span>
+          <span>Round {currentRoundIndex + 1}/{rounds.length}</span>
+        </div>
+        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
           <motion.div
-            className="flex items-center gap-2 px-4 py-2 bg-pastel-purple rounded-xl"
-            animate={timeLeft <= 10 ? { scale: [1, 1.1, 1] } : {}}
-            transition={{ repeat: timeLeft <= 10 ? Infinity : 0, duration: 0.5 }}
+            className="h-full bg-green-500"
+            animate={{ width: `${(matchedPairs.size / currentRound.pairs.length) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Combo indicator */}
+      {combo >= 2 && isPlaying && (
+        <div className="mb-4">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex justify-center"
           >
-            <Clock size={20} className={timeLeft <= 10 ? 'text-incorrect' : 'text-accent'} />
-            <span className={`font-mono font-bold text-lg ${timeLeft <= 10 ? 'text-incorrect' : 'text-accent'}`}>
-              {timeLeft}s
-            </span>
+            <div className="px-4 py-1 bg-gradient-to-r from-orange-500/20 to-amber-500/20 border border-orange-500/30 rounded-full">
+              <span className="font-bold text-orange-400 flex items-center gap-1">
+                <Flame size={16} /> {combo}x Combo!
+              </span>
+            </div>
           </motion.div>
-
-          {/* Score */}
-          <div className="flex items-center gap-2">
-            <Zap size={20} className="text-xp" />
-            <span className="font-bold text-xp">{score}</span>
-          </div>
         </div>
+      )}
 
-        {/* Progress */}
-        <div className="px-4 pb-2">
-          <div className="flex justify-between text-xs text-text-muted mb-1">
-            <span>{currentRound.title}</span>
-            <span>Round {currentRoundIndex + 1}/{rounds.length}</span>
-          </div>
-          <div className="h-2 bg-surface-elevated rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-correct"
-              animate={{ width: `${(matchedPairs.size / currentRound.pairs.length) * 100}%` }}
-            />
-          </div>
-        </div>
+      {/* Subject tag */}
+      <div className="flex justify-center mb-4">
+        <span className="px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full text-sm font-medium">
+          {currentRound.subject}
+        </span>
+      </div>
 
-        {/* Combo indicator */}
-        {combo >= 2 && (
-          <div className="px-4 pb-2">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex justify-center"
-            >
-              <div className="px-4 py-1 bg-gradient-to-r from-streak/20 to-amber-500/20 border border-streak/30 rounded-full">
-                <span className="font-bold text-streak flex items-center gap-1">
-                  <Flame size={16} /> {combo}x Combo!
+      <div className="grid grid-cols-2 gap-4 max-w-2xl mx-auto">
+        {/* Terms column */}
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-400 mb-2 text-center">Terms</h3>
+          {shuffledTerms.map((pair) => {
+            const isMatched = matchedPairs.has(pair.id);
+            const isSelected = selectedTerm === pair.id;
+
+            return (
+              <motion.button
+                key={pair.id}
+                onClick={() => handleTermClick(pair.id)}
+                disabled={isMatched}
+                className={`w-full p-3 rounded-xl text-sm font-medium transition-all ${
+                  isMatched
+                    ? 'bg-green-500/20 text-green-400 opacity-60'
+                    : isSelected
+                    ? 'bg-purple-600 text-white scale-105'
+                    : 'bg-white/5 border border-white/10 hover:border-purple-500/50 text-white'
+                }`}
+                whileTap={!isMatched ? { scale: 0.98 } : {}}
+              >
+                <span className="flex items-center gap-2">
+                  {isMatched && <CheckCircle size={16} />}
+                  {pair.term}
                 </span>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </header>
-
-      {/* Main content */}
-      <main className="flex-1 p-4">
-        <div className="max-w-2xl mx-auto">
-          {/* Subject tag */}
-          <div className="flex justify-center mb-4">
-            <span className="px-3 py-1 bg-pastel-purple text-accent rounded-full text-sm font-medium">
-              {currentRound.subject}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* Terms column */}
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-text-muted mb-2 text-center">Terms</h3>
-              {shuffledTerms.map((pair) => {
-                const isMatched = matchedPairs.has(pair.id);
-                const isSelected = selectedTerm === pair.id;
-
-                return (
-                  <motion.button
-                    key={pair.id}
-                    onClick={() => handleTermClick(pair.id)}
-                    disabled={isMatched}
-                    className={`w-full p-3 rounded-xl text-sm font-medium transition-all ${
-                      isMatched
-                        ? 'bg-pastel-green text-correct opacity-60'
-                        : isSelected
-                        ? 'bg-accent text-white scale-105'
-                        : 'bg-surface border border-border hover:border-accent'
-                    }`}
-                    whileTap={!isMatched ? { scale: 0.98 } : {}}
-                  >
-                    <span className="flex items-center gap-2">
-                      {isMatched && <CheckCircle size={16} />}
-                      {pair.term}
-                    </span>
-                  </motion.button>
-                );
-              })}
-            </div>
-
-            {/* Definitions column */}
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-text-muted mb-2 text-center">Definitions</h3>
-              {shuffledDefinitions.map((pair) => {
-                const isMatched = matchedPairs.has(pair.id);
-                const isWrong = wrongMatch === pair.id;
-
-                return (
-                  <motion.button
-                    key={pair.id}
-                    onClick={() => handleDefinitionClick(pair)}
-                    disabled={isMatched || !selectedTerm}
-                    className={`w-full p-3 rounded-xl text-sm text-left transition-all ${
-                      isMatched
-                        ? 'bg-pastel-green text-correct opacity-60'
-                        : isWrong
-                        ? 'bg-pastel-pink border-2 border-incorrect animate-shake'
-                        : selectedTerm
-                        ? 'bg-surface border border-border hover:border-accent cursor-pointer'
-                        : 'bg-surface-elevated text-text-muted'
-                    }`}
-                    whileTap={!isMatched && selectedTerm ? { scale: 0.98 } : {}}
-                  >
-                    <span className="flex items-center gap-2">
-                      {isMatched && <CheckCircle size={16} />}
-                      {pair.definition}
-                    </span>
-                  </motion.button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Instructions */}
-          <AnimatePresence>
-            {!selectedTerm && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="text-center text-text-muted text-sm mt-4"
-              >
-                Tap a term on the left to select it
-              </motion.p>
-            )}
-            {selectedTerm && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="text-center text-accent text-sm mt-4 font-medium"
-              >
-                Now tap the matching definition on the right
-              </motion.p>
-            )}
-          </AnimatePresence>
+              </motion.button>
+            );
+          })}
         </div>
-      </main>
-    </div>
+
+        {/* Definitions column */}
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-400 mb-2 text-center">Definitions</h3>
+          {shuffledDefinitions.map((pair) => {
+            const isMatched = matchedPairs.has(pair.id);
+            const isWrong = wrongMatch === pair.id;
+
+            return (
+              <motion.button
+                key={pair.id}
+                onClick={() => handleDefinitionClick(pair)}
+                disabled={isMatched || !selectedTerm}
+                className={`w-full p-3 rounded-xl text-sm text-left transition-all ${
+                  isMatched
+                    ? 'bg-green-500/20 text-green-400 opacity-60'
+                    : isWrong
+                    ? 'bg-red-500/20 border-2 border-red-500 animate-shake'
+                    : selectedTerm
+                    ? 'bg-white/5 border border-white/10 hover:border-purple-500/50 cursor-pointer text-white'
+                    : 'bg-white/5 text-gray-500'
+                }`}
+                whileTap={!isMatched && selectedTerm ? { scale: 0.98 } : {}}
+              >
+                <span className="flex items-center gap-2">
+                  {isMatched && <CheckCircle size={16} />}
+                  {pair.definition}
+                </span>
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Instructions */}
+      <AnimatePresence>
+        {!selectedTerm && isPlaying && (
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="text-center text-gray-400 text-sm mt-4"
+          >
+            Tap a term on the left to select it
+          </motion.p>
+        )}
+        {selectedTerm && isPlaying && (
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="text-center text-purple-400 text-sm mt-4 font-medium"
+          >
+            Now tap the matching definition on the right
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </GameFrame>
   );
 }
