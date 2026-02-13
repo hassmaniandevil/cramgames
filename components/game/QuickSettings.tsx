@@ -104,17 +104,21 @@ export function QuickSettings({ className }: QuickSettingsProps) {
       <button
         onClick={() => setIsOpen(true)}
         className={cn(
-          'flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-purple-500/50 transition-colors',
+          'flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10 hover:border-purple-500/50 hover:bg-white/10 transition-colors',
           className
         )}
       >
-        <GraduationCap size={18} className="text-purple-400" />
-        <span className="text-sm font-medium text-white">
-          {currentYearInfo?.label}
-        </span>
-        <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
-          {selectedSubjects.length} subjects
-        </span>
+        <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+          <GraduationCap size={20} className="text-purple-400" />
+        </div>
+        <div className="flex flex-col items-start text-left min-w-0">
+          <span className="text-sm font-semibold text-white">
+            {currentYearInfo?.label}
+          </span>
+          <span className="text-xs text-gray-400">
+            {selectedSubjects.length} subjects selected
+          </span>
+        </div>
       </button>
 
       {/* Settings modal */}
