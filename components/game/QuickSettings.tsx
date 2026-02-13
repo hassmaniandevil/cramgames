@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings,
   X,
-  ChevronDown,
   Check,
   GraduationCap,
   BookOpen,
@@ -41,13 +40,13 @@ const YEAR_GROUPS: { value: YearGroup; label: string; stage: string }[] = [
 ];
 
 const SUBJECTS = [
-  { id: 'maths', name: 'Maths', icon: Calculator, color: 'text-purple-400', bg: 'bg-purple-500/20' },
-  { id: 'biology', name: 'Biology', icon: Dna, color: 'text-green-400', bg: 'bg-green-500/20' },
-  { id: 'chemistry', name: 'Chemistry', icon: FlaskConical, color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
-  { id: 'physics', name: 'Physics', icon: Atom, color: 'text-blue-400', bg: 'bg-blue-500/20' },
-  { id: 'english', name: 'English', icon: Feather, color: 'text-rose-400', bg: 'bg-rose-500/20' },
-  { id: 'history', name: 'History', icon: ScrollText, color: 'text-amber-400', bg: 'bg-amber-500/20' },
-  { id: 'geography', name: 'Geography', icon: Globe, color: 'text-teal-400', bg: 'bg-teal-500/20' },
+  { id: 'maths', name: 'Maths', icon: Calculator, color: 'text-purple-400', bg: 'bg-purple-500/20', border: 'border-purple-500/50' },
+  { id: 'biology', name: 'Biology', icon: Dna, color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500/50' },
+  { id: 'chemistry', name: 'Chemistry', icon: FlaskConical, color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/50' },
+  { id: 'physics', name: 'Physics', icon: Atom, color: 'text-blue-400', bg: 'bg-blue-500/20', border: 'border-blue-500/50' },
+  { id: 'english', name: 'English', icon: Feather, color: 'text-rose-400', bg: 'bg-rose-500/20', border: 'border-rose-500/50' },
+  { id: 'history', name: 'History', icon: ScrollText, color: 'text-amber-400', bg: 'bg-amber-500/20', border: 'border-amber-500/50' },
+  { id: 'geography', name: 'Geography', icon: Globe, color: 'text-teal-400', bg: 'bg-teal-500/20', border: 'border-teal-500/50' },
 ];
 
 interface QuickSettingsProps {
@@ -87,6 +86,7 @@ export function QuickSettings({ className }: QuickSettingsProps) {
   };
 
   const handleYearChange = (year: YearGroup) => {
+    console.log('Year changed to:', year);
     setSelectedYear(year);
     setProfile({ yearGroup: year });
   };
@@ -99,15 +99,15 @@ export function QuickSettings({ className }: QuickSettingsProps) {
       <button
         onClick={() => setIsOpen(true)}
         className={cn(
-          'flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-elevated border border-border hover:border-accent/50 transition-colors',
+          'flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-purple-500/50 transition-colors',
           className
         )}
       >
-        <GraduationCap size={18} className="text-accent" />
-        <span className="text-sm font-medium text-text-primary">
+        <GraduationCap size={18} className="text-purple-400" />
+        <span className="text-sm font-medium text-white">
           {currentYearInfo?.label}
         </span>
-        <span className="text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent">
+        <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
           {selectedSubjects.length} subjects
         </span>
       </button>
@@ -123,13 +123,13 @@ export function QuickSettings({ className }: QuickSettingsProps) {
           >
             {/* Backdrop */}
             <motion.div
-              className="absolute inset-0 bg-black/60"
+              className="absolute inset-0 bg-black/80"
               onClick={() => setIsOpen(false)}
             />
 
             {/* Panel */}
             <motion.div
-              className="relative w-full max-w-md bg-surface rounded-t-3xl sm:rounded-2xl p-6 max-h-[85vh] overflow-y-auto"
+              className="relative w-full max-w-md bg-[#1a1a24] rounded-t-3xl sm:rounded-2xl p-6 max-h-[85vh] overflow-y-auto border border-white/10"
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
@@ -137,25 +137,25 @@ export function QuickSettings({ className }: QuickSettingsProps) {
               {/* Header */}
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center">
-                    <Settings size={20} className="text-accent" />
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                    <Settings size={20} className="text-purple-400" />
                   </div>
                   <div>
-                    <h2 className="font-semibold text-text-primary">Quick Settings</h2>
-                    <p className="text-xs text-text-muted">Customize your experience</p>
+                    <h2 className="font-semibold text-white">Quick Settings</h2>
+                    <p className="text-xs text-gray-400">Customize your experience</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="p-2 hover:bg-surface-elevated rounded-lg transition-colors"
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                 >
-                  <X size={20} className="text-text-muted" />
+                  <X size={20} className="text-gray-400" />
                 </button>
               </div>
 
               {/* Year Level */}
               <div className="mb-6">
-                <h3 className="text-sm font-medium text-text-secondary mb-3 flex items-center gap-2">
+                <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
                   <GraduationCap size={16} />
                   School Year
                 </h3>
@@ -163,18 +163,19 @@ export function QuickSettings({ className }: QuickSettingsProps) {
                   {YEAR_GROUPS.map((year) => (
                     <button
                       key={year.value}
+                      type="button"
                       onClick={() => handleYearChange(year.value)}
                       className={cn(
-                        'py-3 px-2 rounded-xl text-center transition-all',
+                        'py-3 px-2 rounded-xl text-center transition-all cursor-pointer',
                         selectedYear === year.value
-                          ? 'bg-accent text-white'
-                          : 'bg-surface-elevated text-text-secondary hover:bg-surface-elevated/80'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-white/5 text-gray-300 hover:bg-white/10'
                       )}
                     >
                       <div className="text-sm font-semibold">{year.label.replace('Year ', 'Y')}</div>
                       <div className={cn(
                         'text-xs mt-0.5',
-                        selectedYear === year.value ? 'text-white/70' : 'text-text-muted'
+                        selectedYear === year.value ? 'text-white/70' : 'text-gray-500'
                       )}>
                         {year.stage}
                       </div>
@@ -185,10 +186,10 @@ export function QuickSettings({ className }: QuickSettingsProps) {
 
               {/* Subjects */}
               <div className="mb-6">
-                <h3 className="text-sm font-medium text-text-secondary mb-3 flex items-center gap-2">
+                <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
                   <BookOpen size={16} />
                   Subjects
-                  <span className="text-xs text-text-muted">(tap to toggle)</span>
+                  <span className="text-xs text-gray-500">(tap to toggle)</span>
                 </h3>
                 <div className="grid grid-cols-2 gap-2">
                   {SUBJECTS.map((subject) => {
@@ -198,17 +199,18 @@ export function QuickSettings({ className }: QuickSettingsProps) {
                     return (
                       <button
                         key={subject.id}
+                        type="button"
                         onClick={() => toggleSubject(subject.id)}
                         className={cn(
-                          'flex items-center gap-3 p-3 rounded-xl transition-all',
+                          'flex items-center gap-3 p-3 rounded-xl transition-all cursor-pointer border-2',
                           isActive
-                            ? `${subject.bg} border-2 border-current ${subject.color}`
-                            : 'bg-surface-elevated text-text-muted border-2 border-transparent'
+                            ? `${subject.bg} ${subject.border} ${subject.color}`
+                            : 'bg-white/5 text-gray-400 border-transparent hover:bg-white/10'
                         )}
                       >
                         <div className={cn(
                           'w-8 h-8 rounded-lg flex items-center justify-center',
-                          isActive ? 'bg-white/20' : 'bg-surface'
+                          isActive ? 'bg-white/20' : 'bg-white/5'
                         )}>
                           <Icon size={18} />
                         </div>
@@ -225,17 +227,18 @@ export function QuickSettings({ className }: QuickSettingsProps) {
               </div>
 
               {/* Quick summary */}
-              <div className="p-4 rounded-xl bg-surface-elevated border border-border">
-                <p className="text-sm text-text-secondary text-center">
-                  Showing <span className="font-semibold text-text-primary">{currentYearInfo?.stage}</span> content
-                  for <span className="font-semibold text-accent">{selectedSubjects.length} subjects</span>
+              <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                <p className="text-sm text-gray-400 text-center">
+                  Showing <span className="font-semibold text-white">{currentYearInfo?.stage}</span> content
+                  for <span className="font-semibold text-purple-400">{selectedSubjects.length} subjects</span>
                 </p>
               </div>
 
               {/* Done button */}
               <button
+                type="button"
                 onClick={() => setIsOpen(false)}
-                className="w-full mt-4 py-3 bg-accent text-white font-semibold rounded-xl hover:bg-accent/90 transition-colors"
+                className="w-full mt-4 py-3 bg-purple-600 text-white font-semibold rounded-xl hover:bg-purple-500 transition-colors"
               >
                 Done
               </button>
