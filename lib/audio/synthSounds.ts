@@ -361,6 +361,165 @@ export function playMissionCompleteSound() {
   }
 }
 
+/**
+ * Game countdown tick
+ */
+export function playTickSound() {
+  if (isMuted) return;
+
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+
+    const { osc, gain } = createOscillator(ctx, 800, 'sine', 0.05, 0.2);
+    gain.gain.setValueAtTime(0.2 * masterVolume, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } catch (e) {
+    console.warn('Audio error:', e);
+  }
+}
+
+/**
+ * Game start GO!
+ */
+export function playGoSound() {
+  if (isMuted) return;
+
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+
+    const { osc, gain } = createOscillator(ctx, 1047, 'sine', 0.2, 0.4);
+    gain.gain.setValueAtTime(0.4 * masterVolume, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  } catch (e) {
+    console.warn('Audio error:', e);
+  }
+}
+
+/**
+ * Time's up sound
+ */
+export function playTimeUpSound() {
+  if (isMuted) return;
+
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+
+    // Descending "game over" tone
+    const { osc, gain } = createOscillator(ctx, 400, 'sawtooth', 0.4, 0.2);
+    osc.frequency.setValueAtTime(400, now);
+    osc.frequency.exponentialRampToValueAtTime(200, now + 0.4);
+    gain.gain.setValueAtTime(0.2 * masterVolume, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+    osc.start(now);
+    osc.stop(now + 0.4);
+  } catch (e) {
+    console.warn('Audio error:', e);
+  }
+}
+
+/**
+ * Boss defeated fanfare
+ */
+export function playBossDefeatedSound() {
+  if (isMuted) return;
+
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+
+    // Triumphant arpeggio
+    const notes = [262, 330, 392, 523, 659, 784, 1047];
+    notes.forEach((freq, i) => {
+      const { osc, gain } = createOscillator(ctx, freq, 'sine', 0.2, 0.3);
+      const startTime = now + i * 0.07;
+      gain.gain.setValueAtTime(0.3 * masterVolume, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+      osc.start(startTime);
+      osc.stop(startTime + 0.2);
+    });
+
+    // Final chord
+    setTimeout(() => {
+      [523, 659, 784, 1047].forEach((freq) => {
+        const { osc, gain } = createOscillator(ctx, freq, 'sine', 0.5, 0.25);
+        gain.gain.setValueAtTime(0.25 * masterVolume, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+      });
+    }, 500);
+  } catch (e) {
+    console.warn('Audio error:', e);
+  }
+}
+
+/**
+ * Perfect round sound
+ */
+export function playPerfectSound() {
+  if (isMuted) return;
+
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((freq, i) => {
+      const { osc, gain } = createOscillator(ctx, freq, 'sine', 0.3, 0.3);
+      const startTime = now + i * 0.08;
+      gain.gain.setValueAtTime(0.3 * masterVolume, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.3);
+      osc.start(startTime);
+      osc.stop(startTime + 0.3);
+    });
+  } catch (e) {
+    console.warn('Audio error:', e);
+  }
+}
+
+/**
+ * Streak broken sound
+ */
+export function playStreakBrokenSound() {
+  if (isMuted) return;
+
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+
+    // Descending sad tones
+    const notes = [294, 262, 220];
+    notes.forEach((freq, i) => {
+      const { osc, gain } = createOscillator(ctx, freq, 'triangle', 0.2, 0.2);
+      const startTime = now + i * 0.1;
+      gain.gain.setValueAtTime(0.2 * masterVolume, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+      osc.start(startTime);
+      osc.stop(startTime + 0.2);
+    });
+  } catch (e) {
+    console.warn('Audio error:', e);
+  }
+}
+
+/**
+ * Initialize audio context (call on user interaction)
+ */
+export function initAudio(): void {
+  try {
+    getAudioContext();
+  } catch (e) {
+    console.warn('Failed to initialize audio:', e);
+  }
+}
+
 export default {
   playCorrectSound,
   playWrongSound,
@@ -372,6 +531,13 @@ export default {
   playSuccessSound,
   playTimerWarningSound,
   playMissionCompleteSound,
+  playTickSound,
+  playGoSound,
+  playTimeUpSound,
+  playBossDefeatedSound,
+  playPerfectSound,
+  playStreakBrokenSound,
+  initAudio,
   setVolume,
   getVolume,
   setMuted,
