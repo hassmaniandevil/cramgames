@@ -65,7 +65,9 @@ export function QuickSettings({ className }: QuickSettingsProps) {
 
   // Sync local state when profile changes (e.g., on hydration)
   useEffect(() => {
+    console.log('useEffect triggered, profile:', profile);
     if (profile?.yearGroup) {
+      console.log('Setting selectedYear from profile:', profile.yearGroup);
       setSelectedYear(profile.yearGroup);
     }
     if (profile?.subjects?.length) {
@@ -86,8 +88,12 @@ export function QuickSettings({ className }: QuickSettingsProps) {
   };
 
   const handleYearChange = (year: YearGroup) => {
+    console.log('handleYearChange called with:', year);
+    console.log('Current selectedYear:', selectedYear);
+    console.log('Current profile:', profile);
     setSelectedYear(year);
     setProfile({ yearGroup: year });
+    console.log('After setSelectedYear, new value:', year);
   };
 
   const currentYearInfo = YEAR_GROUPS.find(y => y.value === selectedYear);
@@ -163,37 +169,27 @@ export function QuickSettings({ className }: QuickSettingsProps) {
                   {YEAR_GROUPS.map((year) => {
                     const isSelected = selectedYear === year.value;
                     return (
-                      <div
+                      <button
                         key={year.value}
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleYearChange(year.value);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            handleYearChange(year.value);
-                          }
-                        }}
+                        type="button"
+                        onClick={() => handleYearChange(year.value)}
                         className={cn(
-                          'py-3 px-2 rounded-xl text-center transition-all cursor-pointer select-none',
+                          'py-3 px-2 rounded-xl text-center transition-all',
                           isSelected
                             ? 'bg-purple-600 text-white'
-                            : 'bg-white/5 text-gray-300 hover:bg-white/10 active:bg-white/20'
+                            : 'bg-white/5 text-gray-300 hover:bg-white/10'
                         )}
                       >
-                        <div className="text-sm font-semibold pointer-events-none">
+                        <div className="text-sm font-semibold">
                           {year.label.replace('Year ', 'Y')}
                         </div>
                         <div className={cn(
-                          'text-xs mt-0.5 pointer-events-none',
+                          'text-xs mt-0.5',
                           isSelected ? 'text-white/70' : 'text-gray-500'
                         )}>
                           {year.stage}
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
