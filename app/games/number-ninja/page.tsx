@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useProgressStore } from '@/lib/stores/progressStore';
+import { useUserStore } from '@/lib/stores/userStore';
 import {
   X,
   Zap,
@@ -23,77 +24,164 @@ interface MathProblem {
 }
 
 function generateProblem(difficulty: number): MathProblem {
-  const operations = ['+', '-', '×', '÷'];
-
-  let a: number, b: number, answer: number, question: string;
+  let a: number, b: number, c: number, answer: number, question: string;
 
   if (difficulty < 3) {
-    // Easy: single digit addition/subtraction
+    // KS3 Easy: single digit addition/subtraction
     const op = Math.random() > 0.5 ? '+' : '-';
     a = Math.floor(Math.random() * 10) + 1;
     b = Math.floor(Math.random() * 10) + 1;
     if (op === '-' && b > a) [a, b] = [b, a];
     answer = op === '+' ? a + b : a - b;
     question = `${a} ${op} ${b}`;
-  } else if (difficulty < 6) {
-    // Medium: times tables or two-digit operations
+  } else if (difficulty < 5) {
+    // KS3 Medium: times tables or two-digit operations
     const opType = Math.floor(Math.random() * 3);
     if (opType === 0) {
-      // Times tables
       a = Math.floor(Math.random() * 12) + 1;
       b = Math.floor(Math.random() * 12) + 1;
       answer = a * b;
       question = `${a} × ${b}`;
     } else if (opType === 1) {
-      // Two-digit addition
       a = Math.floor(Math.random() * 50) + 10;
       b = Math.floor(Math.random() * 50) + 10;
       answer = a + b;
       question = `${a} + ${b}`;
     } else {
-      // Two-digit subtraction
       a = Math.floor(Math.random() * 50) + 50;
       b = Math.floor(Math.random() * 50) + 10;
       answer = a - b;
       question = `${a} - ${b}`;
     }
-  } else {
-    // Hard: division, larger numbers, percentages
-    const opType = Math.floor(Math.random() * 4);
+  } else if (difficulty < 7) {
+    // GCSE: division, percentages, squares
+    const opType = Math.floor(Math.random() * 5);
     if (opType === 0) {
-      // Division (exact)
       b = Math.floor(Math.random() * 12) + 2;
-      answer = Math.floor(Math.random() * 12) + 1;
+      answer = Math.floor(Math.random() * 15) + 1;
       a = b * answer;
       question = `${a} ÷ ${b}`;
     } else if (opType === 1) {
-      // Percentage
-      const percent = [10, 20, 25, 50][Math.floor(Math.random() * 4)];
+      const percent = [10, 15, 20, 25, 50, 75][Math.floor(Math.random() * 6)];
       a = Math.floor(Math.random() * 10 + 1) * 20;
       answer = (percent / 100) * a;
       question = `${percent}% of ${a}`;
     } else if (opType === 2) {
-      // Squares
-      a = Math.floor(Math.random() * 12) + 1;
+      a = Math.floor(Math.random() * 15) + 1;
       answer = a * a;
       question = `${a}²`;
-    } else {
+    } else if (opType === 3) {
       // Three number operation
-      a = Math.floor(Math.random() * 10) + 1;
+      a = Math.floor(Math.random() * 20) + 5;
+      b = Math.floor(Math.random() * 20) + 5;
+      c = Math.floor(Math.random() * 20) + 5;
+      answer = a + b - c;
+      question = `${a} + ${b} - ${c}`;
+    } else {
+      // Mixed operations
+      a = Math.floor(Math.random() * 10) + 2;
       b = Math.floor(Math.random() * 10) + 1;
-      const c = Math.floor(Math.random() * 10) + 1;
-      answer = a + b + c;
-      question = `${a} + ${b} + ${c}`;
+      c = Math.floor(Math.random() * 10) + 1;
+      answer = a * b + c;
+      question = `${a} × ${b} + ${c}`;
+    }
+  } else if (difficulty < 9) {
+    // A-Level Foundation: harder calculations
+    const opType = Math.floor(Math.random() * 6);
+    if (opType === 0) {
+      // Cubes
+      a = Math.floor(Math.random() * 6) + 2;
+      answer = a * a * a;
+      question = `${a}³`;
+    } else if (opType === 1) {
+      // Square roots (perfect squares)
+      const roots = [4, 9, 16, 25, 36, 49, 64, 81, 100, 121, 144, 169, 196, 225];
+      a = roots[Math.floor(Math.random() * roots.length)];
+      answer = Math.sqrt(a);
+      question = `√${a}`;
+    } else if (opType === 2) {
+      // Fraction of amount
+      const fracs = [[1,4], [1,5], [2,5], [3,4], [2,3], [3,5]];
+      const [num, den] = fracs[Math.floor(Math.random() * fracs.length)];
+      a = den * (Math.floor(Math.random() * 10) + 5);
+      answer = (num / den) * a;
+      question = `${num}/${den} of ${a}`;
+    } else if (opType === 3) {
+      // Negative numbers
+      a = Math.floor(Math.random() * 20) + 10;
+      b = Math.floor(Math.random() * 30) + 15;
+      answer = a - b;
+      question = `${a} - ${b}`;
+    } else if (opType === 4) {
+      // Powers of 2
+      a = Math.floor(Math.random() * 8) + 2;
+      answer = Math.pow(2, a);
+      question = `2^${a}`;
+    } else {
+      // Multiply then divide
+      a = Math.floor(Math.random() * 15) + 5;
+      b = Math.floor(Math.random() * 8) + 2;
+      c = Math.floor(Math.random() * 4) + 2;
+      answer = (a * b) / c;
+      // Ensure whole number
+      a = Math.floor(answer) * c / b;
+      a = Math.round(a);
+      answer = (a * b) / c;
+      if (!Number.isInteger(answer)) {
+        a = 12; b = 4; c = 2;
+        answer = 24;
+      }
+      question = `${a} × ${b} ÷ ${c}`;
+    }
+  } else {
+    // A-Level Advanced: complex mental math
+    const opType = Math.floor(Math.random() * 6);
+    if (opType === 0) {
+      // Factorial (small)
+      a = Math.floor(Math.random() * 4) + 3;
+      answer = [6, 24, 120, 720][a - 3];
+      question = `${a}!`;
+    } else if (opType === 1) {
+      // Sum of arithmetic sequence
+      a = Math.floor(Math.random() * 5) + 1; // first term
+      const n = Math.floor(Math.random() * 4) + 3; // number of terms
+      answer = (n * (2 * a + (n - 1))) / 2;
+      question = `${a} + ${a+1} + ... + ${a+n-1}`;
+    } else if (opType === 2) {
+      // Large multiplication
+      a = Math.floor(Math.random() * 50) + 50;
+      b = Math.floor(Math.random() * 9) + 2;
+      answer = a * b;
+      question = `${a} × ${b}`;
+    } else if (opType === 3) {
+      // Percentage increase/decrease
+      a = Math.floor(Math.random() * 5 + 1) * 50;
+      const percent = [10, 20, 25][Math.floor(Math.random() * 3)];
+      answer = a + (percent / 100) * a;
+      question = `${a} + ${percent}%`;
+    } else if (opType === 4) {
+      // Cube roots (perfect cubes)
+      const cubes = [8, 27, 64, 125, 216];
+      a = cubes[Math.floor(Math.random() * cubes.length)];
+      answer = Math.round(Math.pow(a, 1/3));
+      question = `∛${a}`;
+    } else {
+      // Combined operations
+      a = Math.floor(Math.random() * 10) + 5;
+      b = Math.floor(Math.random() * 10) + 5;
+      answer = a * a + b * b;
+      question = `${a}² + ${b}²`;
     }
   }
 
   // Generate wrong options
   const options = [answer];
+  const offsetRange = Math.max(5, Math.abs(Math.floor(answer * 0.2)));
   while (options.length < 4) {
     let wrong: number;
-    const offset = Math.floor(Math.random() * 10) + 1;
+    const offset = Math.floor(Math.random() * offsetRange) + 1;
     wrong = Math.random() > 0.5 ? answer + offset : answer - offset;
-    if (wrong > 0 && !options.includes(wrong)) {
+    if (!options.includes(wrong) && wrong !== answer) {
       options.push(wrong);
     }
   }
@@ -107,9 +195,20 @@ function generateProblem(difficulty: number): MathProblem {
   return { question, answer, options };
 }
 
+// Map year group to starting difficulty
+function getStartingDifficulty(yearGroup: number): number {
+  if (yearGroup <= 7) return 1;      // KS3 Easy
+  if (yearGroup <= 9) return 3;      // KS3 Medium
+  if (yearGroup <= 11) return 5;     // GCSE
+  return 7;                          // A-Level
+}
+
 export default function NumberNinjaPage() {
   const router = useRouter();
   const { addXP } = useProgressStore();
+  const { profile } = useUserStore();
+  const yearGroup = profile?.yearGroup || 10;
+  const startingDifficulty = getStartingDifficulty(yearGroup);
 
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'finished'>('ready');
   const [timeLeft, setTimeLeft] = useState(60);
@@ -120,7 +219,7 @@ export default function NumberNinjaPage() {
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
-  const [difficulty, setDifficulty] = useState(1);
+  const [difficulty, setDifficulty] = useState(startingDifficulty);
   const [totalAnswered, setTotalAnswered] = useState(0);
   const [correctAnswers, setCorrectAnswers] = useState(0);
 
@@ -138,7 +237,7 @@ export default function NumberNinjaPage() {
     setScore(0);
     setCombo(0);
     setMaxCombo(0);
-    setDifficulty(1);
+    setDifficulty(startingDifficulty);
     setTotalAnswered(0);
     setCorrectAnswers(0);
     newProblem();
@@ -211,8 +310,11 @@ export default function NumberNinjaPage() {
           <h1 className="text-3xl font-bold text-text-primary mb-2">
             Number Ninja
           </h1>
-          <p className="text-text-secondary mb-8">
+          <p className="text-text-secondary mb-2">
             Answer as many maths questions as you can in 60 seconds!
+          </p>
+          <p className="text-sm text-accent font-medium mb-8">
+            Difficulty: {yearGroup <= 9 ? 'KS3' : yearGroup <= 11 ? 'GCSE' : 'A-Level'} (Year {yearGroup})
           </p>
 
           <div className="grid grid-cols-3 gap-4 mb-8">
