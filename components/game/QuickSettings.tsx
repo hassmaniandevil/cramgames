@@ -65,9 +65,7 @@ export function QuickSettings({ className }: QuickSettingsProps) {
 
   // Sync local state when profile changes (e.g., on hydration)
   useEffect(() => {
-    console.log('useEffect triggered, profile:', profile);
     if (profile?.yearGroup) {
-      console.log('Setting selectedYear from profile:', profile.yearGroup);
       setSelectedYear(profile.yearGroup);
     }
     if (profile?.subjects?.length) {
