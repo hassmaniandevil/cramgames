@@ -1,0 +1,50 @@
+import { Question } from './index';
+
+export interface HistoryQuestion extends Omit<Question, 'subject'> {
+  subject: 'history';
+}
+
+export const historyQuestions: HistoryQuestion[] = [
+  // Year 1-2 (KS1)
+  { id: 'h-ks1-1', question: 'What do we call things from the past?', correctAnswer: 'History', wrongAnswers: ['Future', 'Present', 'News'], explanation: 'History is the study of events that happened in the past.', subject: 'history', yearGroup: 1, topic: 'Introduction', difficulty: 'easy' },
+  { id: 'h-ks1-2', question: 'Who was the first person to walk on the moon?', correctAnswer: 'Neil Armstrong', wrongAnswers: ['Buzz Aldrin', 'Yuri Gagarin', 'Tim Peake'], explanation: 'Neil Armstrong walked on the moon in 1969.', subject: 'history', yearGroup: 2, topic: 'Space', difficulty: 'easy' },
+  { id: 'h-ks1-3', question: 'What did Florence Nightingale do?', correctAnswer: 'Helped sick soldiers as a nurse', wrongAnswers: ['Flew airplanes', 'Discovered electricity', 'Built bridges'], explanation: 'Florence Nightingale improved nursing during the Crimean War.', subject: 'history', yearGroup: 2, topic: 'Famous people', difficulty: 'easy' },
+
+  // Year 3-4 (Lower KS2)
+  { id: 'h-ks2l-1', question: 'What did the Ancient Egyptians build?', correctAnswer: 'Pyramids', wrongAnswers: ['Castles', 'Skyscrapers', 'Igloos'], explanation: 'The pyramids were tombs for pharaohs.', subject: 'history', yearGroup: 3, topic: 'Ancient Egypt', difficulty: 'easy' },
+  { id: 'h-ks2l-2', question: 'Who built Hadrian\'s Wall?', correctAnswer: 'The Romans', wrongAnswers: ['The Vikings', 'The Saxons', 'The Normans'], explanation: 'The Romans built the wall across northern Britain.', subject: 'history', yearGroup: 4, topic: 'Romans', difficulty: 'easy' },
+  { id: 'h-ks2l-3', question: 'What is an archaeologist?', correctAnswer: 'Someone who studies the past by digging up objects', wrongAnswers: ['A type of doctor', 'A castle builder', 'A map maker'], explanation: 'Archaeologists find and study artifacts from the past.', subject: 'history', yearGroup: 3, topic: 'Historical skills', difficulty: 'easy' },
+  { id: 'h-ks2l-4', question: 'What year did the Great Fire of London happen?', correctAnswer: '1666', wrongAnswers: ['1066', '1888', '1500'], explanation: 'The Great Fire of London burned for four days in 1666.', subject: 'history', yearGroup: 4, topic: 'Stuart Britain', difficulty: 'medium' },
+
+  // Year 5-6 (Upper KS2)
+  { id: 'h-ks2u-1', question: 'When did World War II end?', correctAnswer: '1945', wrongAnswers: ['1918', '1939', '1950'], explanation: 'WWII ended in 1945 with the defeat of Germany and Japan.', subject: 'history', yearGroup: 6, topic: 'World War II', difficulty: 'easy' },
+  { id: 'h-ks2u-2', question: 'What was the Blitz?', correctAnswer: 'German bombing of British cities', wrongAnswers: ['A type of tank', 'A battle in France', 'A code name'], explanation: 'The Blitz was the sustained bombing of Britain 1940-1941.', subject: 'history', yearGroup: 6, topic: 'World War II', difficulty: 'easy' },
+  { id: 'h-ks2u-3', question: 'Who were the Vikings?', correctAnswer: 'Seafaring people from Scandinavia', wrongAnswers: ['Romans from Italy', 'Tribes from Africa', 'Traders from China'], explanation: 'Vikings came from Denmark, Norway, and Sweden.', subject: 'history', yearGroup: 5, topic: 'Vikings', difficulty: 'easy' },
+  { id: 'h-ks2u-4', question: 'What happened in 1066?', correctAnswer: 'The Norman Conquest of England', wrongAnswers: ['The Roman invasion', 'The Great Fire', 'World War I began'], explanation: 'William the Conqueror defeated Harold at the Battle of Hastings.', subject: 'history', yearGroup: 5, topic: 'Normans', difficulty: 'medium' },
+
+  // Year 7-9 (KS3)
+  { id: 'h-ks3-1', question: 'What was the Black Death?', correctAnswer: 'A plague that killed millions in medieval Europe', wrongAnswers: ['A type of armor', 'A war', 'A famine'], explanation: 'The Black Death (1348-50) killed about a third of Europe\'s population.', subject: 'history', yearGroup: 7, topic: 'Medieval', difficulty: 'easy' },
+  { id: 'h-ks3-2', question: 'Who was Henry VIII?', correctAnswer: 'A Tudor king known for his six wives', wrongAnswers: ['A Roman emperor', 'A French king', 'A Viking leader'], explanation: 'Henry VIII broke from Rome and founded the Church of England.', subject: 'history', yearGroup: 7, topic: 'Tudors', difficulty: 'easy' },
+  { id: 'h-ks3-3', question: 'What was the Industrial Revolution?', correctAnswer: 'A period of rapid industrial and technological change', wrongAnswers: ['A war', 'A plague', 'A political movement'], explanation: 'Starting c.1760, factories and machines transformed Britain.', subject: 'history', yearGroup: 8, topic: 'Industrial Revolution', difficulty: 'easy' },
+  { id: 'h-ks3-4', question: 'What was the Transatlantic Slave Trade?', correctAnswer: 'The forced transportation of Africans to the Americas', wrongAnswers: ['Trade between Europe and Asia', 'A Roman trade route', 'A medieval market'], explanation: 'Millions of Africans were enslaved and transported 1500s-1800s.', subject: 'history', yearGroup: 8, topic: 'Slave Trade', difficulty: 'medium' },
+  { id: 'h-ks3-5', question: 'When did World War I begin?', correctAnswer: '1914', wrongAnswers: ['1918', '1939', '1900'], explanation: 'WWI began in 1914, triggered by the assassination of Archduke Franz Ferdinand.', subject: 'history', yearGroup: 9, topic: 'World War I', difficulty: 'easy' },
+  { id: 'h-ks3-6', question: 'What was trench warfare?', correctAnswer: 'Fighting from defensive ditches', wrongAnswers: ['Naval battles', 'Air combat', 'Guerrilla tactics'], explanation: 'WWI was characterized by soldiers fighting from trenches.', subject: 'history', yearGroup: 9, topic: 'World War I', difficulty: 'easy' },
+  { id: 'h-ks3-7', question: 'What was the Reformation?', correctAnswer: 'A religious movement that split Western Christianity', wrongAnswers: ['A political revolution', 'A scientific discovery', 'An economic system'], explanation: 'Luther\'s protests led to Protestant churches breaking from Rome.', subject: 'history', yearGroup: 8, topic: 'Reformation', difficulty: 'medium' },
+
+  // Year 10-11 (GCSE)
+  { id: 'h-gcse-1', question: 'What was the Treaty of Versailles?', correctAnswer: 'The peace treaty ending WWI', wrongAnswers: ['A trade agreement', 'A military alliance', 'A colonial treaty'], explanation: 'Signed 1919, it blamed Germany and imposed harsh penalties.', subject: 'history', yearGroup: 10, topic: 'World War I', difficulty: 'medium' },
+  { id: 'h-gcse-2', question: 'Who was Adolf Hitler?', correctAnswer: 'Nazi dictator of Germany 1933-1945', wrongAnswers: ['Italian fascist leader', 'Soviet leader', 'British Prime Minister'], explanation: 'Hitler led Nazi Germany, starting WWII and the Holocaust.', subject: 'history', yearGroup: 10, topic: 'World War II', difficulty: 'easy' },
+  { id: 'h-gcse-3', question: 'What was the Holocaust?', correctAnswer: 'The Nazi genocide of six million Jews', wrongAnswers: ['A battle', 'A treaty', 'An economic crisis'], explanation: 'The Holocaust was the systematic murder of Jews and others.', subject: 'history', yearGroup: 10, topic: 'World War II', difficulty: 'easy' },
+  { id: 'h-gcse-4', question: 'What was the Cold War?', correctAnswer: 'Political tension between USA and USSR without direct war', wrongAnswers: ['A war in winter', 'A trade dispute', 'A religious conflict'], explanation: 'The Cold War (1947-1991) was ideological conflict between superpowers.', subject: 'history', yearGroup: 11, topic: 'Cold War', difficulty: 'medium' },
+  { id: 'h-gcse-5', question: 'What was the Berlin Wall?', correctAnswer: 'A wall dividing East and West Berlin', wrongAnswers: ['A Roman fortification', 'A medieval castle', 'A prison'], explanation: 'Built 1961, it symbolized Cold War division until 1989.', subject: 'history', yearGroup: 11, topic: 'Cold War', difficulty: 'easy' },
+  { id: 'h-gcse-6', question: 'What was the Suffragette movement?', correctAnswer: 'Campaign for women\'s voting rights', wrongAnswers: ['A workers\' strike', 'An anti-war protest', 'A religious movement'], explanation: 'Suffragettes campaigned for women\'s right to vote in elections.', subject: 'history', yearGroup: 10, topic: 'Rights', difficulty: 'easy' },
+  { id: 'h-gcse-7', question: 'Who was Winston Churchill?', correctAnswer: 'British Prime Minister during WWII', wrongAnswers: ['American President', 'French General', 'German Chancellor'], explanation: 'Churchill led Britain through WWII with his inspiring speeches.', subject: 'history', yearGroup: 10, topic: 'World War II', difficulty: 'easy' },
+  { id: 'h-gcse-8', question: 'What was D-Day?', correctAnswer: 'Allied invasion of Normandy, June 6, 1944', wrongAnswers: ['German surrender', 'Atomic bombing', 'Pearl Harbor attack'], explanation: 'D-Day was the largest amphibious invasion in history.', subject: 'history', yearGroup: 11, topic: 'World War II', difficulty: 'medium' },
+
+  // Year 12-13 (A-Level)
+  { id: 'h-al-1', question: 'What was the significance of the Magna Carta?', correctAnswer: 'Limited the power of the monarch', wrongAnswers: ['Declared war on France', 'Created Parliament', 'Ended feudalism'], explanation: 'Signed 1215, it established that the king was subject to law.', subject: 'history', yearGroup: 12, topic: 'Constitutional', difficulty: 'medium' },
+  { id: 'h-al-2', question: 'What was mercantilism?', correctAnswer: 'Economic policy favoring exports and accumulating wealth', wrongAnswers: ['Free trade', 'Communism', 'Feudalism'], explanation: 'European powers sought to maximize exports and gold reserves.', subject: 'history', yearGroup: 12, topic: 'Economic', difficulty: 'hard' },
+  { id: 'h-al-3', question: 'What caused the French Revolution?', correctAnswer: 'Financial crisis, inequality, and Enlightenment ideas', wrongAnswers: ['Foreign invasion', 'Religious persecution', 'Natural disaster'], explanation: 'Multiple factors including debt, famine, and new political ideas.', subject: 'history', yearGroup: 13, topic: 'Revolutions', difficulty: 'hard' },
+];
+
+export default historyQuestions;

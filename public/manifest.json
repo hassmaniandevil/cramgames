@@ -1,0 +1,43 @@
+{
+  "name": "CramGames",
+  "short_name": "CramGames",
+  "description": "Level up your revision with epic games, boss battles, and brain-bending puzzles!",
+  "theme_color": "#0f0f23",
+  "background_color": "#0f0f23",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/images/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "games"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Play Games",
+      "short_name": "Play",
+      "description": "Jump into the action",
+      "url": "/",
+      "icons": [{ "src": "/images/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Boss Battle",
+      "short_name": "Boss",
+      "description": "Challenge the bosses",
+      "url": "/games/boss-battle",
+      "icons": [{ "src": "/images/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
