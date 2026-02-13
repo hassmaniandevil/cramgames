@@ -86,7 +86,6 @@ export function QuickSettings({ className }: QuickSettingsProps) {
   };
 
   const handleYearChange = (year: YearGroup) => {
-    console.log('Year changed to:', year);
     setSelectedYear(year);
     setProfile({ yearGroup: year });
   };
@@ -129,10 +128,11 @@ export function QuickSettings({ className }: QuickSettingsProps) {
 
             {/* Panel */}
             <motion.div
-              className="relative w-full max-w-md bg-[#1a1a24] rounded-t-3xl sm:rounded-2xl p-6 max-h-[85vh] overflow-y-auto border border-white/10"
+              className="relative z-10 w-full max-w-md bg-[#1a1a24] rounded-t-3xl sm:rounded-2xl p-6 max-h-[85vh] overflow-y-auto border border-white/10"
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 100, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-6">
@@ -160,27 +160,42 @@ export function QuickSettings({ className }: QuickSettingsProps) {
                   School Year
                 </h3>
                 <div className="grid grid-cols-4 gap-2">
-                  {YEAR_GROUPS.map((year) => (
-                    <button
-                      key={year.value}
-                      type="button"
-                      onClick={() => handleYearChange(year.value)}
-                      className={cn(
-                        'py-3 px-2 rounded-xl text-center transition-all cursor-pointer',
-                        selectedYear === year.value
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-white/5 text-gray-300 hover:bg-white/10'
-                      )}
-                    >
-                      <div className="text-sm font-semibold">{year.label.replace('Year ', 'Y')}</div>
-                      <div className={cn(
-                        'text-xs mt-0.5',
-                        selectedYear === year.value ? 'text-white/70' : 'text-gray-500'
-                      )}>
-                        {year.stage}
+                  {YEAR_GROUPS.map((year) => {
+                    const isSelected = selectedYear === year.value;
+                    return (
+                      <div
+                        key={year.value}
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleYearChange(year.value);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            handleYearChange(year.value);
+                          }
+                        }}
+                        className={cn(
+                          'py-3 px-2 rounded-xl text-center transition-all cursor-pointer select-none',
+                          isSelected
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-white/5 text-gray-300 hover:bg-white/10 active:bg-white/20'
+                        )}
+                      >
+                        <div className="text-sm font-semibold pointer-events-none">
+                          {year.label.replace('Year ', 'Y')}
+                        </div>
+                        <div className={cn(
+                          'text-xs mt-0.5 pointer-events-none',
+                          isSelected ? 'text-white/70' : 'text-gray-500'
+                        )}>
+                          {year.stage}
+                        </div>
                       </div>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
