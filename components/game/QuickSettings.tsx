@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings,
@@ -58,25 +58,40 @@ export function QuickSettings({ className }: QuickSettingsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { profile, setProfile } = useUserStore();
 
-  const currentYear = profile?.yearGroup || 10;
-  const activeSubjects = profile?.subjects || SUBJECTS.map(s => s.id);
+  // Use local state for immediate UI feedback
+  const [selectedYear, setSelectedYear] = useState<YearGroup>(profile?.yearGroup || 10);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(
+    profile?.subjects?.length ? profile.subjects : SUBJECTS.map(s => s.id)
+  );
+
+  // Sync local state when profile changes (e.g., on hydration)
+  useEffect(() => {
+    if (profile?.yearGroup) {
+      setSelectedYear(profile.yearGroup);
+    }
+    if (profile?.subjects?.length) {
+      setSelectedSubjects(profile.subjects);
+    }
+  }, [profile?.yearGroup, profile?.subjects]);
 
   const toggleSubject = (subjectId: string) => {
-    const newSubjects = activeSubjects.includes(subjectId)
-      ? activeSubjects.filter(s => s !== subjectId)
-      : [...activeSubjects, subjectId];
+    const newSubjects = selectedSubjects.includes(subjectId)
+      ? selectedSubjects.filter(s => s !== subjectId)
+      : [...selectedSubjects, subjectId];
 
     // Ensure at least one subject is selected
     if (newSubjects.length > 0) {
+      setSelectedSubjects(newSubjects);
       setProfile({ subjects: newSubjects });
     }
   };
 
-  const setYear = (year: YearGroup) => {
+  const handleYearChange = (year: YearGroup) => {
+    setSelectedYear(year);
     setProfile({ yearGroup: year });
   };
 
-  const currentYearInfo = YEAR_GROUPS.find(y => y.value === currentYear);
+  const currentYearInfo = YEAR_GROUPS.find(y => y.value === selectedYear);
 
   return (
     <>
@@ -93,7 +108,7 @@ export function QuickSettings({ className }: QuickSettingsProps) {
           {currentYearInfo?.label}
         </span>
         <span className="text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent">
-          {activeSubjects.length} subjects
+          {selectedSubjects.length} subjects
         </span>
       </button>
 
@@ -148,10 +163,10 @@ export function QuickSettings({ className }: QuickSettingsProps) {
                   {YEAR_GROUPS.map((year) => (
                     <button
                       key={year.value}
-                      onClick={() => setYear(year.value)}
+                      onClick={() => handleYearChange(year.value)}
                       className={cn(
                         'py-3 px-2 rounded-xl text-center transition-all',
-                        currentYear === year.value
+                        selectedYear === year.value
                           ? 'bg-accent text-white'
                           : 'bg-surface-elevated text-text-secondary hover:bg-surface-elevated/80'
                       )}
@@ -159,7 +174,7 @@ export function QuickSettings({ className }: QuickSettingsProps) {
                       <div className="text-sm font-semibold">{year.label.replace('Year ', 'Y')}</div>
                       <div className={cn(
                         'text-xs mt-0.5',
-                        currentYear === year.value ? 'text-white/70' : 'text-text-muted'
+                        selectedYear === year.value ? 'text-white/70' : 'text-text-muted'
                       )}>
                         {year.stage}
                       </div>
@@ -177,7 +192,7 @@ export function QuickSettings({ className }: QuickSettingsProps) {
                 </h3>
                 <div className="grid grid-cols-2 gap-2">
                   {SUBJECTS.map((subject) => {
-                    const isActive = activeSubjects.includes(subject.id);
+                    const isActive = selectedSubjects.includes(subject.id);
                     const Icon = subject.icon;
 
                     return (
@@ -213,7 +228,7 @@ export function QuickSettings({ className }: QuickSettingsProps) {
               <div className="p-4 rounded-xl bg-surface-elevated border border-border">
                 <p className="text-sm text-text-secondary text-center">
                   Showing <span className="font-semibold text-text-primary">{currentYearInfo?.stage}</span> content
-                  for <span className="font-semibold text-accent">{activeSubjects.length} subjects</span>
+                  for <span className="font-semibold text-accent">{selectedSubjects.length} subjects</span>
                 </p>
               </div>
 
