@@ -8,6 +8,7 @@ import { gcsePhysicsQuestions, gcsePhysicsTerms, gcsePhysicsFormulas } from './g
 import { alevelPhysicsQuestions, alevelPhysicsTerms, alevelPhysicsFormulas } from './alevel';
 import { ks3PhysicsExpanded, ks3PhysicsTermsExpanded } from './ks3-expanded';
 import { gcsePhysicsExpanded, gcsePhysicsTermsExpanded, gcsePhysicsFormulasExpanded } from './gcse-expanded';
+import { alevelPhysicsExpanded, alevelPhysicsTermsExpanded, alevelPhysicsFormulasExpanded } from './alevel-expanded';
 
 // Combined exports (base + expanded)
 export const physicsQuestions = [
@@ -16,6 +17,7 @@ export const physicsQuestions = [
   ...gcsePhysicsQuestions,
   ...gcsePhysicsExpanded,
   ...alevelPhysicsQuestions,
+  ...alevelPhysicsExpanded,
 ];
 
 export const physicsTerms = [
@@ -24,6 +26,7 @@ export const physicsTerms = [
   ...gcsePhysicsTerms,
   ...gcsePhysicsTermsExpanded,
   ...alevelPhysicsTerms,
+  ...alevelPhysicsTermsExpanded,
 ];
 
 export const physicsFormulas = [
@@ -31,6 +34,7 @@ export const physicsFormulas = [
   ...gcsePhysicsFormulas,
   ...gcsePhysicsFormulasExpanded,
   ...alevelPhysicsFormulas,
+  ...alevelPhysicsFormulasExpanded,
 ];
 
 // Re-export individual levels
