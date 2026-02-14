@@ -6,16 +6,19 @@
 import { ks3PhysicsQuestions, ks3PhysicsTerms, ks3PhysicsFormulas } from './ks3';
 import { gcsePhysicsQuestions, gcsePhysicsTerms, gcsePhysicsFormulas } from './gcse';
 import { alevelPhysicsQuestions, alevelPhysicsTerms, alevelPhysicsFormulas } from './alevel';
+import { ks3PhysicsExpanded, ks3PhysicsTermsExpanded } from './ks3-expanded';
 
-// Combined exports
+// Combined exports (base + expanded)
 export const physicsQuestions = [
   ...ks3PhysicsQuestions,
+  ...ks3PhysicsExpanded,
   ...gcsePhysicsQuestions,
   ...alevelPhysicsQuestions,
 ];
 
 export const physicsTerms = [
   ...ks3PhysicsTerms,
+  ...ks3PhysicsTermsExpanded,
   ...gcsePhysicsTerms,
   ...alevelPhysicsTerms,
 ];
