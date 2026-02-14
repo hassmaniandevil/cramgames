@@ -24,6 +24,25 @@ import { generateAllGeographyQuestions } from './generators/geography';
 import { englishQuestions as handcraftedEnglish } from './english';
 import { historyQuestions as handcraftedHistory } from './history';
 
+// Import NEW comprehensive question banks (KS3/GCSE/A-Level structured)
+import { mathsQuestions as comprehensiveMaths, mathsTerms, mathsFormulas } from './maths/index';
+import { biologyQuestions as comprehensiveBiology, biologyTerms, biologyDiagrams } from './biology/index';
+import { chemistryQuestions as comprehensiveChemistry, chemistryTerms, chemistryFormulas } from './chemistry/index';
+import { physicsQuestions as comprehensivePhysics, physicsTerms, physicsFormulas } from './physics/index';
+import { englishQuestions as comprehensiveEnglish, englishTerms } from './english/index';
+import { historyQuestions as comprehensiveHistory, historyTerms, historyTimeline } from './history/index';
+import { geographyQuestions as comprehensiveGeography, geographyTerms, geographyFormulas } from './geography/index';
+
+// Re-export types and content from comprehensive banks
+export * from './types';
+export { mathsTerms, mathsFormulas } from './maths/index';
+export { biologyTerms, biologyDiagrams } from './biology/index';
+export { chemistryTerms, chemistryFormulas } from './chemistry/index';
+export { physicsTerms, physicsFormulas } from './physics/index';
+export { englishTerms } from './english/index';
+export { historyTerms, historyTimeline } from './history/index';
+export { geographyTerms, geographyFormulas } from './geography/index';
+
 // ============================================
 // LAZY LOADING CACHE
 // ============================================
@@ -38,31 +57,43 @@ let _englishQuestions: Question[] | null = null;
 let _historyQuestions: Question[] | null = null;
 let _geographyQuestions: Question[] | null = null;
 
-// Lazy getters for each subject
+// Lazy getters for each subject (combines generators + comprehensive question banks)
 export function getMathsQuestions(): Question[] {
   if (!_mathsQuestions) {
-    _mathsQuestions = generateAllMathsQuestions();
+    _mathsQuestions = [
+      ...generateAllMathsQuestions(),
+      ...(comprehensiveMaths as unknown as Question[])
+    ];
   }
   return _mathsQuestions;
 }
 
 export function getBiologyQuestions(): Question[] {
   if (!_biologyQuestions) {
-    _biologyQuestions = generateBiologyQuestions();
+    _biologyQuestions = [
+      ...generateBiologyQuestions(),
+      ...(comprehensiveBiology as unknown as Question[])
+    ];
   }
   return _biologyQuestions;
 }
 
 export function getChemistryQuestions(): Question[] {
   if (!_chemistryQuestions) {
-    _chemistryQuestions = generateChemistryQuestions();
+    _chemistryQuestions = [
+      ...generateChemistryQuestions(),
+      ...(comprehensiveChemistry as unknown as Question[])
+    ];
   }
   return _chemistryQuestions;
 }
 
 export function getPhysicsQuestions(): Question[] {
   if (!_physicsQuestions) {
-    _physicsQuestions = generatePhysicsQuestions();
+    _physicsQuestions = [
+      ...generatePhysicsQuestions(),
+      ...(comprehensivePhysics as unknown as Question[])
+    ];
   }
   return _physicsQuestions;
 }
@@ -71,7 +102,8 @@ export function getEnglishQuestions(): Question[] {
   if (!_englishQuestions) {
     _englishQuestions = [
       ...generateAllEnglishQuestions(),
-      ...(handcraftedEnglish as Question[])
+      ...(handcraftedEnglish as Question[]),
+      ...(comprehensiveEnglish as unknown as Question[])
     ];
   }
   return _englishQuestions;
@@ -81,7 +113,8 @@ export function getHistoryQuestions(): Question[] {
   if (!_historyQuestions) {
     _historyQuestions = [
       ...generateAllHistoryQuestions(),
-      ...(handcraftedHistory as Question[])
+      ...(handcraftedHistory as Question[]),
+      ...(comprehensiveHistory as unknown as Question[])
     ];
   }
   return _historyQuestions;
@@ -89,7 +122,10 @@ export function getHistoryQuestions(): Question[] {
 
 export function getGeographyQuestions(): Question[] {
   if (!_geographyQuestions) {
-    _geographyQuestions = generateAllGeographyQuestions();
+    _geographyQuestions = [
+      ...generateAllGeographyQuestions(),
+      ...(comprehensiveGeography as unknown as Question[])
+    ];
   }
   return _geographyQuestions;
 }
