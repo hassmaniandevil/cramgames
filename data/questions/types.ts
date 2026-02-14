@@ -40,12 +40,13 @@ export interface Question {
 export interface TermDefinition {
   id: string;
   subject: Subject;
-  topic: string;
+  topic?: string;
   difficulty: DifficultyLevel;
   term: string;
   definition: string;
   example?: string;
   tags?: string[];
+  relatedTerms?: string[];  // Related concepts for cross-referencing
 }
 
 export interface Formula {
@@ -55,9 +56,10 @@ export interface Formula {
   difficulty: DifficultyLevel;
   name: string;
   formula: string;
-  variables: { symbol: string; meaning: string }[];
+  variables?: { symbol: string; meaning: string }[];  // Optional for simpler formulas
   units?: string;
   example?: string;
+  description?: string;  // Human-readable explanation of the formula
 }
 
 export interface TimelineEvent {

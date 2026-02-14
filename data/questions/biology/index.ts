@@ -4,6 +4,7 @@
  */
 
 import { Question, TermDefinition, DiagramPart } from '../types';
+import { gcseBiologyExpanded, gcseBiologyTermsExpanded } from './gcse-expanded';
 
 // ============================================================================
 // KS3 BIOLOGY QUESTIONS (Years 7-9) - 150 Questions
@@ -6633,7 +6634,8 @@ export const biologyTerms: TermDefinition[] = [
     definition: 'When a species completely dies out.',
     example: 'Dinosaurs became extinct 65 million years ago.',
     tags: ['evolution', 'species']
-  }
+  },
+  ...gcseBiologyTermsExpanded
 ];
 
 // ============================================================================
@@ -6804,5 +6806,6 @@ export const biologyDiagrams: DiagramPart[] = [
 export const biologyQuestions: Question[] = [
   ...ks3Questions,
   ...gcseQuestions,
+  ...gcseBiologyExpanded,
   ...alevelQuestions
 ];

@@ -7,12 +7,14 @@ import { ks3ChemistryQuestions, ks3ChemistryTerms } from './ks3';
 import { gcseChemistryQuestions, gcseChemistryTerms, gcseChemistryFormulas } from './gcse';
 import { alevelChemistryQuestions, alevelChemistryTerms, alevelChemistryFormulas } from './alevel';
 import { ks3ChemistryExpanded, ks3ChemistryTermsExpanded } from './ks3-expanded';
+import { gcseChemistryExpanded, gcseChemistryTermsExpanded } from './gcse-expanded';
 
 // Combined exports (base + expanded)
 export const chemistryQuestions = [
   ...ks3ChemistryQuestions,
   ...ks3ChemistryExpanded,
   ...gcseChemistryQuestions,
+  ...gcseChemistryExpanded,
   ...alevelChemistryQuestions,
 ];
 
@@ -20,6 +22,7 @@ export const chemistryTerms = [
   ...ks3ChemistryTerms,
   ...ks3ChemistryTermsExpanded,
   ...gcseChemistryTerms,
+  ...gcseChemistryTermsExpanded,
   ...alevelChemistryTerms,
 ];
 

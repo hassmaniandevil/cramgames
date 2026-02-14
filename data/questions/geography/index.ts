@@ -6,18 +6,21 @@
 import { ks3GeographyQuestions, ks3GeographyTerms } from './ks3';
 import { gcseGeographyQuestions, gcseGeographyTerms } from './gcse';
 import { alevelGeographyQuestions, alevelGeographyTerms, alevelGeographyFormulas } from './alevel';
+import { geographyExpanded, geographyTermsExpanded } from './expanded';
 
 // Combined exports
 export const geographyQuestions = [
   ...ks3GeographyQuestions,
   ...gcseGeographyQuestions,
   ...alevelGeographyQuestions,
+  ...geographyExpanded,
 ];
 
 export const geographyTerms = [
   ...ks3GeographyTerms,
   ...gcseGeographyTerms,
   ...alevelGeographyTerms,
+  ...geographyTermsExpanded,
 ];
 
 export const geographyFormulas = [

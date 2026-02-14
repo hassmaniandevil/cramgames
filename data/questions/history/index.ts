@@ -6,24 +6,28 @@
 import { ks3HistoryQuestions, ks3HistoryTerms, ks3HistoryTimeline } from './ks3';
 import { gcseHistoryQuestions, gcseHistoryTerms, gcseHistoryTimeline } from './gcse';
 import { alevelHistoryQuestions, alevelHistoryTerms, alevelHistoryTimeline } from './alevel';
+import { historyExpanded, historyTermsExpanded, historyTimelineExpanded } from './expanded';
 
 // Combined exports
 export const historyQuestions = [
   ...ks3HistoryQuestions,
   ...gcseHistoryQuestions,
   ...alevelHistoryQuestions,
+  ...historyExpanded,
 ];
 
 export const historyTerms = [
   ...ks3HistoryTerms,
   ...gcseHistoryTerms,
   ...alevelHistoryTerms,
+  ...historyTermsExpanded,
 ];
 
 export const historyTimeline = [
   ...ks3HistoryTimeline,
   ...gcseHistoryTimeline,
   ...alevelHistoryTimeline,
+  ...historyTimelineExpanded,
 ];
 
 // Re-export individual levels
