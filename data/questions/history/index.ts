@@ -12,6 +12,7 @@ import { gcseHistoryExpanded, gcseHistoryTermsExpanded, gcseHistoryTimelineExpan
 import { alevelHistoryExpanded, alevelHistoryTermsExpanded, alevelHistoryTimelineExpanded } from './alevel-expanded';
 import { gcseHistoryExpanded2, gcseHistoryTermsExpanded2, gcseHistoryTimelineExpanded2 } from './gcse-expanded-2';
 import { ks3HistoryExpanded2, ks3HistoryTermsExpanded2, ks3HistoryTimelineExpanded2 } from './ks3-expanded-2';
+import { alevelHistoryExpanded2, alevelHistoryTermsExpanded2, alevelHistoryTimelineExpanded2 } from './alevel-expanded-2';
 
 // Combined exports
 export const historyQuestions = [
@@ -23,6 +24,7 @@ export const historyQuestions = [
   ...gcseHistoryExpanded2,
   ...alevelHistoryQuestions,
   ...alevelHistoryExpanded,
+  ...alevelHistoryExpanded2,
   ...historyExpanded,
 ];
 
@@ -35,6 +37,7 @@ export const historyTerms = [
   ...gcseHistoryTermsExpanded2,
   ...alevelHistoryTerms,
   ...alevelHistoryTermsExpanded,
+  ...alevelHistoryTermsExpanded2,
   ...historyTermsExpanded,
 ];
 
@@ -47,6 +50,7 @@ export const historyTimeline = [
   ...gcseHistoryTimelineExpanded2,
   ...alevelHistoryTimeline,
   ...alevelHistoryTimelineExpanded,
+  ...alevelHistoryTimelineExpanded2,
   ...historyTimelineExpanded,
 ];
 
