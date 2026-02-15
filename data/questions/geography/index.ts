@@ -11,11 +11,13 @@ import { ks3GeographyExpandedNew, ks3GeographyTermsExpanded } from './ks3-expand
 import { gcseGeographyExpandedNew, gcseGeographyTermsExpanded } from './gcse-expanded';
 import { alevelGeographyExpandedNew, alevelGeographyTermsExpanded } from './alevel-expanded';
 import { gcseGeographyExpanded2, gcseGeographyTermsExpanded2 } from './gcse-expanded-2';
+import { ks3GeographyExpanded2, ks3GeographyTermsExpanded2 } from './ks3-expanded-2';
 
 // Combined exports
 export const geographyQuestions = [
   ...ks3GeographyQuestions,
   ...ks3GeographyExpandedNew,
+  ...ks3GeographyExpanded2,
   ...gcseGeographyQuestions,
   ...gcseGeographyExpandedNew,
   ...gcseGeographyExpanded2,
@@ -27,6 +29,7 @@ export const geographyQuestions = [
 export const geographyTerms = [
   ...ks3GeographyTerms,
   ...ks3GeographyTermsExpanded,
+  ...ks3GeographyTermsExpanded2,
   ...gcseGeographyTerms,
   ...gcseGeographyTermsExpanded,
   ...gcseGeographyTermsExpanded2,
