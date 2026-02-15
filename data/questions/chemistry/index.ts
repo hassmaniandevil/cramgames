@@ -11,11 +11,13 @@ import { gcseChemistryExpanded, gcseChemistryTermsExpanded } from './gcse-expand
 import { alevelChemistryExpanded, alevelChemistryTermsExpanded } from './alevel-expanded';
 import { gcseChemistryExpanded2, gcseChemistryTermsExpanded2 } from './gcse-expanded-2';
 import { alevelChemistryExpanded2, alevelChemistryTermsExpanded2, alevelChemistryFormulasExpanded2 } from './alevel-expanded-2';
+import { ks3ChemistryExpanded2, ks3ChemistryTermsExpanded2 } from './ks3-expanded-2';
 
 // Combined exports (base + expanded)
 export const chemistryQuestions = [
   ...ks3ChemistryQuestions,
   ...ks3ChemistryExpanded,
+  ...ks3ChemistryExpanded2,
   ...gcseChemistryQuestions,
   ...gcseChemistryExpanded,
   ...gcseChemistryExpanded2,
@@ -27,6 +29,7 @@ export const chemistryQuestions = [
 export const chemistryTerms = [
   ...ks3ChemistryTerms,
   ...ks3ChemistryTermsExpanded,
+  ...ks3ChemistryTermsExpanded2,
   ...gcseChemistryTerms,
   ...gcseChemistryTermsExpanded,
   ...gcseChemistryTermsExpanded2,
