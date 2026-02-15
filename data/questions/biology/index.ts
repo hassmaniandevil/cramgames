@@ -6,6 +6,7 @@
 import { Question, TermDefinition, DiagramPart } from '../types';
 import { ks3BiologyExpanded, ks3BiologyTermsExpanded } from './ks3-expanded';
 import { gcseBiologyExpanded, gcseBiologyTermsExpanded } from './gcse-expanded';
+import { alevelBiologyExpanded, alevelBiologyTermsExpanded } from './alevel-expanded';
 
 // ============================================================================
 // KS3 BIOLOGY QUESTIONS (Years 7-9) - 150 Questions
@@ -6637,7 +6638,8 @@ export const biologyTerms: TermDefinition[] = [
     tags: ['evolution', 'species']
   },
   ...ks3BiologyTermsExpanded,
-  ...gcseBiologyTermsExpanded
+  ...gcseBiologyTermsExpanded,
+  ...alevelBiologyTermsExpanded
 ];
 
 // ============================================================================
@@ -6810,5 +6812,6 @@ export const biologyQuestions: Question[] = [
   ...ks3BiologyExpanded,
   ...gcseQuestions,
   ...gcseBiologyExpanded,
-  ...alevelQuestions
+  ...alevelQuestions,
+  ...alevelBiologyExpanded
 ];

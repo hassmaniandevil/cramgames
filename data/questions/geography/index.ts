@@ -7,19 +7,28 @@ import { ks3GeographyQuestions, ks3GeographyTerms } from './ks3';
 import { gcseGeographyQuestions, gcseGeographyTerms } from './gcse';
 import { alevelGeographyQuestions, alevelGeographyTerms, alevelGeographyFormulas } from './alevel';
 import { geographyExpanded, geographyTermsExpanded } from './expanded';
+import { ks3GeographyExpandedNew, ks3GeographyTermsExpanded } from './ks3-expanded';
+import { gcseGeographyExpandedNew, gcseGeographyTermsExpanded } from './gcse-expanded';
+import { alevelGeographyExpandedNew, alevelGeographyTermsExpanded } from './alevel-expanded';
 
 // Combined exports
 export const geographyQuestions = [
   ...ks3GeographyQuestions,
+  ...ks3GeographyExpandedNew,
   ...gcseGeographyQuestions,
+  ...gcseGeographyExpandedNew,
   ...alevelGeographyQuestions,
+  ...alevelGeographyExpandedNew,
   ...geographyExpanded,
 ];
 
 export const geographyTerms = [
   ...ks3GeographyTerms,
+  ...ks3GeographyTermsExpanded,
   ...gcseGeographyTerms,
+  ...gcseGeographyTermsExpanded,
   ...alevelGeographyTerms,
+  ...alevelGeographyTermsExpanded,
   ...geographyTermsExpanded,
 ];
 

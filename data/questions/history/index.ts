@@ -8,13 +8,17 @@ import { gcseHistoryQuestions, gcseHistoryTerms, gcseHistoryTimeline } from './g
 import { alevelHistoryQuestions, alevelHistoryTerms, alevelHistoryTimeline } from './alevel';
 import { historyExpanded, historyTermsExpanded, historyTimelineExpanded } from './expanded';
 import { ks3HistoryExpanded, ks3HistoryTermsExpanded, ks3HistoryTimelineExpanded } from './ks3-expanded';
+import { gcseHistoryExpanded, gcseHistoryTermsExpanded, gcseHistoryTimelineExpanded } from './gcse-expanded';
+import { alevelHistoryExpanded, alevelHistoryTermsExpanded, alevelHistoryTimelineExpanded } from './alevel-expanded';
 
 // Combined exports
 export const historyQuestions = [
   ...ks3HistoryQuestions,
   ...ks3HistoryExpanded,
   ...gcseHistoryQuestions,
+  ...gcseHistoryExpanded,
   ...alevelHistoryQuestions,
+  ...alevelHistoryExpanded,
   ...historyExpanded,
 ];
 
@@ -22,7 +26,9 @@ export const historyTerms = [
   ...ks3HistoryTerms,
   ...ks3HistoryTermsExpanded,
   ...gcseHistoryTerms,
+  ...gcseHistoryTermsExpanded,
   ...alevelHistoryTerms,
+  ...alevelHistoryTermsExpanded,
   ...historyTermsExpanded,
 ];
 
@@ -30,7 +36,9 @@ export const historyTimeline = [
   ...ks3HistoryTimeline,
   ...ks3HistoryTimelineExpanded,
   ...gcseHistoryTimeline,
+  ...gcseHistoryTimelineExpanded,
   ...alevelHistoryTimeline,
+  ...alevelHistoryTimelineExpanded,
   ...historyTimelineExpanded,
 ];
 
