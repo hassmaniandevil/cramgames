@@ -7,10 +7,12 @@ import { ks3HistoryQuestions, ks3HistoryTerms, ks3HistoryTimeline } from './ks3'
 import { gcseHistoryQuestions, gcseHistoryTerms, gcseHistoryTimeline } from './gcse';
 import { alevelHistoryQuestions, alevelHistoryTerms, alevelHistoryTimeline } from './alevel';
 import { historyExpanded, historyTermsExpanded, historyTimelineExpanded } from './expanded';
+import { ks3HistoryExpanded, ks3HistoryTermsExpanded, ks3HistoryTimelineExpanded } from './ks3-expanded';
 
 // Combined exports
 export const historyQuestions = [
   ...ks3HistoryQuestions,
+  ...ks3HistoryExpanded,
   ...gcseHistoryQuestions,
   ...alevelHistoryQuestions,
   ...historyExpanded,
@@ -18,6 +20,7 @@ export const historyQuestions = [
 
 export const historyTerms = [
   ...ks3HistoryTerms,
+  ...ks3HistoryTermsExpanded,
   ...gcseHistoryTerms,
   ...alevelHistoryTerms,
   ...historyTermsExpanded,
@@ -25,6 +28,7 @@ export const historyTerms = [
 
 export const historyTimeline = [
   ...ks3HistoryTimeline,
+  ...ks3HistoryTimelineExpanded,
   ...gcseHistoryTimeline,
   ...alevelHistoryTimeline,
   ...historyTimelineExpanded,

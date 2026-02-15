@@ -4,6 +4,7 @@
  */
 
 import { Question, TermDefinition, DiagramPart } from '../types';
+import { ks3BiologyExpanded, ks3BiologyTermsExpanded } from './ks3-expanded';
 import { gcseBiologyExpanded, gcseBiologyTermsExpanded } from './gcse-expanded';
 
 // ============================================================================
@@ -6635,6 +6636,7 @@ export const biologyTerms: TermDefinition[] = [
     example: 'Dinosaurs became extinct 65 million years ago.',
     tags: ['evolution', 'species']
   },
+  ...ks3BiologyTermsExpanded,
   ...gcseBiologyTermsExpanded
 ];
 
@@ -6805,6 +6807,7 @@ export const biologyDiagrams: DiagramPart[] = [
 
 export const biologyQuestions: Question[] = [
   ...ks3Questions,
+  ...ks3BiologyExpanded,
   ...gcseQuestions,
   ...gcseBiologyExpanded,
   ...alevelQuestions
