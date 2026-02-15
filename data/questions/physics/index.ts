@@ -11,11 +11,13 @@ import { gcsePhysicsExpanded, gcsePhysicsTermsExpanded, gcsePhysicsFormulasExpan
 import { alevelPhysicsExpanded, alevelPhysicsTermsExpanded, alevelPhysicsFormulasExpanded } from './alevel-expanded';
 import { gcsePhysicsExpanded2, gcsePhysicsTermsExpanded2, gcsePhysicsFormulasExpanded2 } from './gcse-expanded-2';
 import { alevelPhysicsExpanded2, alevelPhysicsTermsExpanded2, alevelPhysicsFormulasExpanded2 } from './alevel-expanded-2';
+import { ks3PhysicsExpanded2, ks3PhysicsTermsExpanded2, ks3PhysicsFormulasExpanded2 } from './ks3-expanded-2';
 
 // Combined exports (base + expanded)
 export const physicsQuestions = [
   ...ks3PhysicsQuestions,
   ...ks3PhysicsExpanded,
+  ...ks3PhysicsExpanded2,
   ...gcsePhysicsQuestions,
   ...gcsePhysicsExpanded,
   ...gcsePhysicsExpanded2,
@@ -27,6 +29,7 @@ export const physicsQuestions = [
 export const physicsTerms = [
   ...ks3PhysicsTerms,
   ...ks3PhysicsTermsExpanded,
+  ...ks3PhysicsTermsExpanded2,
   ...gcsePhysicsTerms,
   ...gcsePhysicsTermsExpanded,
   ...gcsePhysicsTermsExpanded2,
@@ -37,6 +40,7 @@ export const physicsTerms = [
 
 export const physicsFormulas = [
   ...ks3PhysicsFormulas,
+  ...ks3PhysicsFormulasExpanded2,
   ...gcsePhysicsFormulas,
   ...gcsePhysicsFormulasExpanded,
   ...gcsePhysicsFormulasExpanded2,
