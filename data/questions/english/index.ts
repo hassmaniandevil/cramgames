@@ -10,6 +10,7 @@ import { ks3EnglishExpanded, ks3EnglishTermsExpanded } from './ks3-expanded';
 import { gcseEnglishExpandedNew, gcseEnglishTermsExpanded } from './gcse-expanded';
 import { alevelEnglishExpandedNew, alevelEnglishTermsExpanded } from './alevel-expanded';
 import { gcseEnglishExpanded2, gcseEnglishTermsExpanded2 } from './gcse-expanded-2';
+import { alevelEnglishExpanded2, alevelEnglishTermsExpanded2 } from './alevel-expanded-2';
 
 export const englishQuestions = [
   ...ks3EnglishQuestions,
@@ -19,6 +20,7 @@ export const englishQuestions = [
   ...gcseEnglishExpanded2,
   ...alevelEnglishQuestions,
   ...alevelEnglishExpandedNew,
+  ...alevelEnglishExpanded2,
   ...englishExpanded,
 ];
 
@@ -30,6 +32,7 @@ export const englishTerms = [
   ...gcseEnglishTermsExpanded2,
   ...alevelEnglishTerms,
   ...alevelEnglishTermsExpanded,
+  ...alevelEnglishTermsExpanded2,
   ...englishTermsExpanded,
 ];
 
