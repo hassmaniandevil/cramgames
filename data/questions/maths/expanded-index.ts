@@ -6,6 +6,7 @@
 import { ks3MathsNumber, ks3MathsNumberTerms } from './ks3-number';
 import { ks3MathsAlgebra, ks3MathsAlgebraTerms } from './ks3-algebra';
 import { ks3MathsGeometryStats, ks3MathsGeometryStatsTerms } from './ks3-geometry-stats';
+import { ks3MathsExpanded, ks3MathsTermsExpanded, ks3MathsFormulasExpanded } from './ks3-expanded';
 import { gcseMathsExpanded, gcseMathsTermsExpanded, gcseMathsFormulasExpanded } from './gcse-expanded';
 import { alevelMathsExpanded, alevelMathsTermsExpanded, alevelMathsFormulasExpanded } from './alevel-expanded';
 
@@ -13,6 +14,7 @@ export const mathsExpandedQuestions = [
   ...ks3MathsNumber,
   ...ks3MathsAlgebra,
   ...ks3MathsGeometryStats,
+  ...ks3MathsExpanded,
   ...gcseMathsExpanded,
   ...alevelMathsExpanded,
 ];
@@ -21,11 +23,13 @@ export const mathsExpandedTerms = [
   ...ks3MathsNumberTerms,
   ...ks3MathsAlgebraTerms,
   ...ks3MathsGeometryStatsTerms,
+  ...ks3MathsTermsExpanded,
   ...gcseMathsTermsExpanded,
   ...alevelMathsTermsExpanded,
 ];
 
 export const mathsExpandedFormulas = [
+  ...ks3MathsFormulasExpanded,
   ...gcseMathsFormulasExpanded,
   ...alevelMathsFormulasExpanded,
 ];
