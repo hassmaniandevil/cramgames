@@ -9,6 +9,7 @@ import { gcseBiologyExpanded, gcseBiologyTermsExpanded } from './gcse-expanded';
 import { alevelBiologyExpanded, alevelBiologyTermsExpanded } from './alevel-expanded';
 import { gcseBiologyExpanded2, gcseBiologyTermsExpanded2 } from './gcse-expanded-2';
 import { alevelBiologyExpanded2, alevelBiologyTermsExpanded2 } from './alevel-expanded-2';
+import { ks3BiologyExpanded2, ks3BiologyTermsExpanded2 } from './ks3-expanded-2';
 
 // ============================================================================
 // KS3 BIOLOGY QUESTIONS (Years 7-9) - 150 Questions
@@ -6640,6 +6641,7 @@ export const biologyTerms: TermDefinition[] = [
     tags: ['evolution', 'species']
   },
   ...ks3BiologyTermsExpanded,
+  ...ks3BiologyTermsExpanded2,
   ...gcseBiologyTermsExpanded,
   ...gcseBiologyTermsExpanded2,
   ...alevelBiologyTermsExpanded,
@@ -6814,6 +6816,7 @@ export const biologyDiagrams: DiagramPart[] = [
 export const biologyQuestions: Question[] = [
   ...ks3Questions,
   ...ks3BiologyExpanded,
+  ...ks3BiologyExpanded2,
   ...gcseQuestions,
   ...gcseBiologyExpanded,
   ...gcseBiologyExpanded2,
