@@ -8,6 +8,7 @@ import { gcseChemistryQuestions, gcseChemistryTerms, gcseChemistryFormulas } fro
 import { alevelChemistryQuestions, alevelChemistryTerms, alevelChemistryFormulas } from './alevel';
 import { ks3ChemistryExpanded, ks3ChemistryTermsExpanded } from './ks3-expanded';
 import { gcseChemistryExpanded, gcseChemistryTermsExpanded } from './gcse-expanded';
+import { alevelChemistryExpanded, alevelChemistryTermsExpanded } from './alevel-expanded';
 
 // Combined exports (base + expanded)
 export const chemistryQuestions = [
@@ -16,6 +17,7 @@ export const chemistryQuestions = [
   ...gcseChemistryQuestions,
   ...gcseChemistryExpanded,
   ...alevelChemistryQuestions,
+  ...alevelChemistryExpanded,
 ];
 
 export const chemistryTerms = [
@@ -24,6 +26,7 @@ export const chemistryTerms = [
   ...gcseChemistryTerms,
   ...gcseChemistryTermsExpanded,
   ...alevelChemistryTerms,
+  ...alevelChemistryTermsExpanded,
 ];
 
 export const chemistryFormulas = [
