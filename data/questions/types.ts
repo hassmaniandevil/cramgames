@@ -60,6 +60,8 @@ export interface Formula {
   units?: string;
   example?: string;
   description?: string;  // Human-readable explanation of the formula
+  explanation?: string;
+  tags?: string[];
 }
 
 export interface TimelineEvent {
@@ -70,6 +72,8 @@ export interface TimelineEvent {
   event: string;
   year: number | string;
   description?: string;
+  significance?: string;
+  tags?: string[];
 }
 
 export interface DiagramPart {
