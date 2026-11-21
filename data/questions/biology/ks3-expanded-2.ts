@@ -153,12 +153,7 @@ const ks3Health: Question[] = [
     difficulty: 'ks3',
     type: 'match',
     question: 'Match the nutrient to its function.',
-    correctAnswer: {
-      'Carbohydrates': 'Provide energy',
-      'Proteins': 'Growth and repair',
-      'Fats': 'Energy storage and insulation',
-      'Vitamins': 'Keep body processes working'
-    },
+    correctAnswer: ['Carbohydrates → Provide energy', 'Proteins → Growth and repair', 'Fats → Energy storage and insulation', 'Vitamins → Keep body processes working'],
     explanation: 'A balanced diet includes all nutrients in the right amounts. Too much of one thing can be as bad as too little. Variety is key!',
     tags: ['nutrition', 'diet', 'nutrients'],
     yearGroup: [7, 8, 9]
